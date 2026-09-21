@@ -48,6 +48,46 @@ godot --headless --path godot --script res://tests/audio_check.gd     # 音源�
 xvfb-run -a godot --path godot --script res://tests/scenario_shot.gd --resolution 540x960
 ```
 
+## スマホでの確認（PCが無い場合）
+
+Godot の Web (HTML5/WebAssembly) 書き出しを使い、GitHub Pages でホストして
+スマホのブラウザから直接開ける。書き出しにはビルド対象バージョンの
+export templates が要る（`godot --export-templates-manager` または
+Godot 公式サイトから取得）。
+
+```
+# godot/ ディレクトリで
+godot --headless --path . --export-release "Web" web/index.html
+```
+
+`export_presets.cfg` に設定済みの内容:
+
+- スレッド無し版テンプレート（`variant/thread_support=false`）を使用。
+  スレッド有りビルドは COOP/COEP レスポンスヘッダが必要で、GitHub Pages の
+  ような一般的な静的ホスティングでは配信できない。スレッド無しならヘッダ不要で動く
+- レンダラーは `gl_compatibility`（project.godot と同じ）なので Web でも同じ見た目になる
+
+書き出し後の `web/` は `.gitignore` 対象（ビルド成果物のため）。
+デプロイは `gh-pages` ブランチに配置する運用にしている:
+
+```
+git worktree add --orphan -b gh-pages /tmp/pages_worktree
+cp -r web/* /tmp/pages_worktree/
+cd /tmp/pages_worktree && touch .nojekyll && git add -A && git commit -m "update web build" && git push -u origin gh-pages
+git worktree remove /tmp/pages_worktree --force
+```
+
+その後 GitHub の Settings → Pages → Source を `gh-pages` ブランチ（`/root`）に
+設定すれば、`https://<owner>.github.io/<repo>/` で公開される。
+
+**注意（非公開リポジトリの場合）**: 無料プランの GitHub Pages は非公開のまま
+公開することができない。ビルド成果物だけを `gh-pages` に隔離しているのは、
+Pages を有効にしても本体のソース（企画書等がある `docs/`）が公開されないようにするため。
+
+動作確認はヘッドレス Chromium (Playwright) で実施し、エンジン起動・音源読み込み・
+描画が正常に行われることを確認済み。音はブラウザの自動再生制限により
+初回タップが必要（実機での通常の挙動）。
+
 ## 実装済み / 未実装
 
 | 仕様 | 状態 |

@@ -1,5 +1,7 @@
 # 音源
 
+> **BGM を作る/差し替えるときは [`BGM_REQUIREMENTS.md`](./BGM_REQUIREMENTS.md) を参照。**
+
 `scripts/view/game_audio.gd` の `BGM_PATH` と `SE` がこのフォルダを読む。
 **ファイルが無いイベントは黙って無音になる**ので、一部だけ置いても動く。
 

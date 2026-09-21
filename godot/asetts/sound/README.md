@@ -110,3 +110,50 @@ BGM は BPM 128。sim のティックレートも 128Hz に揃えてある（§4
 ```
 godot --headless --path godot --script res://tests/audio_check.gd
 ```
+
+---
+
+## 4. BGM を Deep_Underwater.ogg（BPM130）に更新
+
+`Breathing Spaces`（実測102.5 BPM、想定128との齟齬）に代えて、新規提供された
+`Deep_Underwater.ogg` を採用した。こちらは**実測でも BPM 130 と確認できた**
+（オンセット強度 1.82、2位のBPM104を大きく引き離す）。
+
+ただし提供された元ファイルには前回と同種の頭出し問題があったため、加工した。
+
+```
+元ファイル (af3ede9f-Deep_Underwater.ogg)
+  全長      273.9735s
+  先頭無音  114.8 ms
+  末尾無音  1407.2 ms
+  実音区間  272.4515s = 147.578 小節（0.42小節ぶん余分）
+
+加工後 (asetts/sound/bgm/Deep_Underwater.ogg)
+  全長      273.2311s  ＝ ちょうど 148.0000 小節
+  先頭無音  1.5 ms
+  末尾無音  779.2 ms（ループの余白として意図的に残した）
+  拍のズレ  0.3 ms（実測誤差の範囲）
+```
+
+加工内容:
+1. 先頭無音の終端と、「148小節ぶん」に相当する終端点を検出
+2. 波形のゼロクロス点にスナップ（トリムでクリックノイズが出ないように）
+3. 前後 1ms だけ極短いフェードをかけて振幅を completely 0 に収束させる
+4. OGG Vorbis で書き出し（`soundfile`／libsndfile 経由。まとめて書き込むと
+   このライブラリのVorbisエンコーダがクラッシュしたため、5秒ごとに
+   ストリーミング書き込みして回避した）
+
+再現・再加工する場合は `tools/trim_bgm_to_bars.py` を使う:
+
+```
+python godot/tools/trim_bgm_to_bars.py <元ファイル> <出力先.ogg> --bpm 130
+```
+
+同スクリプトで再生成した結果を検証済み（`tools/analyze_bgm.py` で148.0000小節・ズレ0msと一致。OGGエンコード自体はビット単位で決定的ではないため、生成のたびにファイルの中身は変わるが音声としては等価）。
+
+## 5. BPM を 128 → 130 に変更
+
+上記の理由により、v1 のテンポを **130 BPM** に更新した。
+`scripts/sim/cfg.gd` の `BPM` / `TICKS` を 130 に、`project.godot` の
+`physics_ticks_per_second` も 130 に変更済み。130Hzでも 1拍=60 / 8分=30 /
+16分=15 ティックとなり、グリッドは正しく整数に乗る（§4.6.3 の一般則どおり）。

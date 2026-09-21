@@ -16,7 +16,7 @@ func _process(_d: float) -> bool:
 		return false
 	var sim = main.sim
 	if not built:
-		sim.reset(1); sim.speed_mult = 0.0; sim.level_override = 1
+		sim.reset(1, false); sim.speed_mult = 0.0; sim.level_override = 1
 		for c in range(LAYOUT.size()):
 			for col in LAYOUT[c]:
 				var b := MBlock.new(); b.color = int(col); sim.ground[c].append(b)

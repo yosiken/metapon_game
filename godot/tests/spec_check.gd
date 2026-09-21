@@ -49,7 +49,7 @@ func _check_grid_frames() -> void:
 
 func _case(name: String, layout: Array, g: float, wt: float, ft: float, a: float, v0: float) -> void:
 	print("\n%s" % name)
-	var s := Sim.new(1)
+	var s := Sim.new(1, false)
 	s.speed_mult = 0.0          # 供給を止める
 	s.g_mult = g                # params の G は Lv1 で 1.00 なので g_mult がそのまま G になる
 	for c in range(layout.size()):

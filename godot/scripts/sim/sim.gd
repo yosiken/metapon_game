@@ -54,10 +54,12 @@ var ev_land: Array = []
 ## 特別チップが発動した記録。view の演出用で、判定には使わない
 var ev_special: Array = []    # [{ "kind": int, "col": int, "row": float, "cells": int }]
 
-func _init(seed_value: int = 12345) -> void:
-	reset(seed_value)
+## prefill=false は**テスト専用**。盤面を自分で組むテストのためのもので、
+## ゲーム側からは常に true で呼ぶ。
+func _init(seed_value: int = 12345, prefill: bool = true) -> void:
+	reset(seed_value, prefill)
 
-func reset(seed_value: int) -> void:
+func reset(seed_value: int, prefill: bool = true) -> void:
 	rng = XorRng.new(seed_value)
 	frame = 0
 	ground = []
@@ -88,6 +90,64 @@ func reset(seed_value: int) -> void:
 	resonance_credit = 0
 	stat_sunk = 0
 	_clear_events()
+	if prefill:
+		_prefill(Cfg.INITIAL_ROWS)
+
+## 開始時の海底 (8.2.2)
+##
+## 空の海底から始めると、最初の数秒は降ってくる瓦礫を眺めるだけの時間になる。
+## あらかじめ INITIAL_ROWS 段を敷いておき、1手目から動かす材料を持たせる。
+##
+## **3つ並びは意図的に避ける。** 敷いた瞬間にマッチが成立すると、
+## プレイヤーが何もしていないのにスコアが入り、盤面も崩れる。
+## 「何もない状態から自分で組む」という初手の体験も失われる。
+func _prefill(rows: int) -> void:
+	if rows <= 0:
+		return
+	var n := int(params()["colors"])
+	# 種別は結晶片のみ。鉄塊は Lv.3、岩は Lv.4 から混入する仕様なので (7.2)、
+	# 開始時点の盤面に混ぜるのは筋が通らない
+	for r in range(rows):
+		for c in range(Cfg.COLS):
+			var b := MBlock.new()
+			b.id = _next_id
+			_next_id += 1
+			b.color = _safe_color(c, r, n)
+			ground[c].append(b)
+
+## (c, r) に置いても MATCH_MIN 並びにならない色。
+##
+## 左下から順に敷くので、見るのは**左と下だけ**でよい（右と上はまだ空）。
+## 毎セルで左を見ているかぎり、後から右へ伸びて3並びになることもない。
+## 候補をシャッフルした順に試し、最初に通ったものを採る。
+func _safe_color(c: int, r: int, n: int) -> int:
+	var order := []
+	for i in range(n):
+		order.append(i)
+	for i in range(order.size() - 1, 0, -1):
+		var j := rng.next_int(i + 1)
+		var t = order[i]
+		order[i] = order[j]
+		order[j] = t
+	for color: int in order:
+		if not _prefill_would_match(c, r, color):
+			return color
+	return order[0]   # n < MATCH_MIN のときだけ起きうる
+
+func _prefill_would_match(c: int, r: int, color: int) -> bool:
+	var run := 1
+	var i := c - 1
+	while i >= 0 and ground[i].size() > r and (ground[i][r] as MBlock).color == color:
+		run += 1
+		i -= 1
+	if run >= Cfg.MATCH_MIN:
+		return true
+	run = 1
+	i = r - 1
+	while i >= 0 and (ground[c][i] as MBlock).color == color:
+		run += 1
+		i -= 1
+	return run >= Cfg.MATCH_MIN
 
 func _clear_events() -> void:
 	ev_freeze = []

@@ -47,7 +47,7 @@ P0 の問い（核そのものが面白いか）を、後から足した仕組�
 godot --headless --path godot --script res://tests/spec_check.gd      # 仕様書 付録B との一致
 godot --headless --path godot --script res://tests/headless_check.gd  # 3分×2シードのスモーク + 決定性
 godot --headless --path godot --script res://tests/audio_check.gd     # 音源が拍に乗るかの実測
-godot --headless --path godot --script res://tests/special_check.gd   # 特別チップの供給と発動 (7.2.1)
+godot --headless --path godot --script res://tests/special_check.gd   # 特別チップ (7.2.1) と開始時の海底 (8.2.2)
 ```
 
 `spec_check` は付録B「数値の検算シート」の5ケースを実際に盤面で再現し、

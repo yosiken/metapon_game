@@ -62,6 +62,7 @@ func _initialize() -> void:
 	ok = _check_resonance() and ok
 	ok = _check_vortex_is_permutation() and ok
 	ok = _check_one_shot() and ok
+	ok = _check_prefill() and ok
 	ok = _check_determinism() and ok
 	print("")
 	print("SPECIAL CHECK PASSED" if ok else "SPECIAL CHECK FAILED")
@@ -79,7 +80,7 @@ func _initialize() -> void:
 ## **位置ではなく参照で検証する**こと。海底のマッチは min_row 以上を丸ごと
 ## 持ち上げるので (_lift_from_ground)、検証時にはもう海底に無い。
 func _fixture(sd: int, kind: int) -> Dictionary:
-	var sim := Sim.new(sd)
+	var sim := Sim.new(sd, false)
 	var row0 := [0, 0, 0]
 	var row1 := [1, 2, 3]
 	for c in range(3):
@@ -146,6 +147,61 @@ func _check_one_shot() -> bool:
 	var ok: bool = fired_once and spent and still_one
 	print("  %s 使い切り: 1回だけ発動して通常ブロックへ戻る（発動=%d 種類=%d）" % [
 		"OK  " if ok else "FAIL", sim.stat_special_fired[1], chip.kind])
+	return ok
+
+## 開始時の海底 (8.2.2) が、どの種でも3並びを含まないこと
+##
+## 「3つ並ばないように配置する」は目視では確かめられない。5000種ぶん
+## 実際に敷いて、縦横すべての極大ランが MATCH_MIN 未満であることを見る。
+func _check_prefill() -> bool:
+	var bad := 0
+	var first := ""
+	var seeds := 5000
+	for sd in range(1, seeds + 1):
+		var sim := Sim.new(sd)
+		# 段数と総数
+		for c in range(Cfg.COLS):
+			if sim.ground[c].size() != Cfg.INITIAL_ROWS:
+				bad += 1
+				if first == "":
+					first = "seed %d: 列%d が %d 段" % [sd, c, sim.ground[c].size()]
+				continue
+		# 横の並び
+		for r in range(Cfg.INITIAL_ROWS):
+			var run := 1
+			for c in range(1, Cfg.COLS):
+				if (sim.ground[c][r] as MBlock).color == (sim.ground[c - 1][r] as MBlock).color:
+					run += 1
+					if run >= Cfg.MATCH_MIN:
+						bad += 1
+						if first == "":
+							first = "seed %d: 行%d の 列%d で横%d連" % [sd, r, c, run]
+				else:
+					run = 1
+		# 縦の並び
+		for c in range(Cfg.COLS):
+			var run := 1
+			for r in range(1, Cfg.INITIAL_ROWS):
+				if (sim.ground[c][r] as MBlock).color == (sim.ground[c][r - 1] as MBlock).color:
+					run += 1
+					if run >= Cfg.MATCH_MIN:
+						bad += 1
+						if first == "":
+							first = "seed %d: 列%d の 行%d で縦%d連" % [sd, c, r, run]
+				else:
+					run = 1
+		# 何も操作していないのにマッチが走っていないこと
+		sim.speed_mult = 0.0
+		for i in range(Cfg.FREEZE_DELAY_FRAMES + 3):
+			sim.step()
+		if not sim.stacks.is_empty() or sim.score > 0.0:
+			bad += 1
+			if first == "":
+				first = "seed %d: 放置で結氷した" % sd
+	var ok: bool = bad == 0
+	print("  %s 開始時の海底: %d種すべてで %d段 x %d列、3並びなし%s" % [
+		"OK  " if ok else "FAIL", seeds, Cfg.INITIAL_ROWS, Cfg.COLS,
+		"" if ok else "  （%d件。例: %s）" % [bad, first]])
 	return ok
 
 ## 特別チップを含めても同じ種から同じ結果が出ること (12.2)

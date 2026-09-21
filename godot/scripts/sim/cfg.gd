@@ -8,6 +8,8 @@ const COLS := 6
 const ROWS := 12
 const BUFFER_ROWS := 2
 const MAX_STACKS := 3
+## 開始時に積んでおく段数 (8.2.2)。0 なら空の海底から始まる
+const INITIAL_ROWS := 2
 
 ## sim のティックレート [Hz]（4.6.3）。
 ## 条件は「**`TICKS * 15 / BPM` が整数**」であること。こうすると 16分音符が

@@ -13,7 +13,7 @@ func _process(_d: float) -> bool:
 		return false
 	var sim = main.sim
 	if phase == 0:
-		sim.reset(7); sim.speed_mult = 0.0
+		sim.reset(7, false); sim.speed_mult = 0.0
 		# 海底を色違いで埋め、2個の特別チップを並べて置く
 		for c in range(Cfg.COLS):
 			for r in range(5):

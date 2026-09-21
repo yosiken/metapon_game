@@ -52,10 +52,23 @@ var _hz_timer := 0.0
 
 const FONT_PATH := "res://asetts/font/NotoSansJP-subset.woff2"
 
+## 氷のアニメーション用チップ（6.4.1）。拍グリッドごとに1枚ずつ進める。
+const ICE_FRAMES := [
+	"res://asetts/chips/ice/ice0_r1c0.png",
+	"res://asetts/chips/ice/ice1_r2c8.png",
+	"res://asetts/chips/ice/ice2_r3c2.png",
+]
+var ice_tex: Array = []
+
 func _ready() -> void:
 	# Web書き出しにはOSのフォントが無く、組み込みのフォールバックは日本語の
 	# グリフを持たないため、埋め込みフォントを使う（無いと全部 豆腐 になる）。
 	# 実際に描画する文字だけをサブセット化してあるので 50KB 程度。
+	for path in ICE_FRAMES:
+		if ResourceLoader.exists(path):
+			ice_tex.append(load(path))
+	if ice_tex.size() < ICE_FRAMES.size():
+		push_warning("氷チップが見つからない。手描きの氷で代替する")
 	if ResourceLoader.exists(FONT_PATH):
 		font = load(FONT_PATH)
 	else:
@@ -406,15 +419,31 @@ func _draw_block(b: MBlock, col: int, row: float, alpha: float) -> void:
 		MBlock.State.ICE:
 			_draw_ice(b, box, alpha)
 
-## 氷は残りグリッド数で段階的に変化する（6.4.1）
+## 氷は残りグリッド数で段階的に変化する（6.4.1）。
+##
+## 見せるものが2つある:
+##   1. 「これは氷だ」        -> 青いチップ3枚を拍グリッドごとに切り替える
+##   2. 「あと何目盛り残りか」 -> 亀裂の本数と際窓の脈動（判断材料なので必須）
+##
+## チップを拍で送るのは §4.6 の「盤面が音楽を刻む」を**目でも見えるように**
+## するため。音を消していても氷が8分/16分で表情を変える。
 func _draw_ice(b: MBlock, box: Rect2, alpha: float) -> void:
 	var gf := sim.grid_frames()
 	var rem: int = maxi(0, b.melt_at - sim.frame)
 	var grids: int = int(ceil(float(rem) / float(gf)))
-	draw_rect(box, Color(0.88, 0.98, 1.0, 0.74 * alpha))
-	# 氷の内側のハイライト（厚みを感じさせる）
-	draw_rect(Rect2(box.position + Vector2(3, 3), box.size - Vector2(6, 6)),
-		Color(1, 1, 1, 0.22 * alpha), false, 2.0)
+
+	if ice_tex.is_empty():
+		draw_rect(box, Color(0.88, 0.98, 1.0, 0.74 * alpha))
+	else:
+		# 拍グリッドが1つ進むごとにコマを送る。ブロックごとに位相をずらし、
+		# 盤面全体が一斉に同じ絵になるのを避ける。
+		var idx: int = (int(sim.frame / gf) + b.id) % ice_tex.size()
+		# チップは元ブロックより少し大きく描く。凍って膨らんだように見え、
+		# セルの隙間も埋まる（凍結時の体積膨張という設定とも合う。4.3）
+		var grow := box.size.x * 0.12
+		var dst := Rect2(box.position - Vector2(grow, grow) * 0.5,
+			box.size + Vector2(grow, grow))
+		draw_texture_rect(ice_tex[idx], dst, false, Color(1, 1, 1, 0.97 * alpha))
 	var edge := Color(0.55, 0.95, 1.0, 0.95 * alpha)
 	var cracks := 0
 	if grids <= 1:
@@ -426,11 +455,14 @@ func _draw_ice(b: MBlock, box: Rect2, alpha: float) -> void:
 	elif grids == 2:
 		cracks = 1
 	draw_rect(box, edge, false, 2.5 if grids <= 1 else 1.5)
+	# 亀裂は残りグリッド数そのもの。氷の絵の上でも読めるよう、
+	# 白の芯に濃い縁取りを付けて描く（6.4.1 の判断材料なので潰さない）
 	for i in range(cracks):
-		var t := 0.25 + 0.25 * float(i)
-		draw_line(box.position + Vector2(box.size.x * t, 2),
-			box.position + Vector2(box.size.x * (t + 0.22), box.size.y - 2),
-			Color(0.13, 0.36, 0.52, 0.9 * alpha), 2.0)
+		var t := 0.22 + 0.26 * float(i)
+		var p0 := box.position + Vector2(box.size.x * t, 3)
+		var p1 := box.position + Vector2(box.size.x * (t + 0.20), box.size.y - 3)
+		draw_line(p0, p1, Color(0.05, 0.22, 0.38, 0.85 * alpha), 4.0)
+		draw_line(p0, p1, Color(0.95, 1.0, 1.0, 0.95 * alpha), 1.8)
 
 func _draw_symbol(color_idx: int, box: Rect2, alpha: float) -> void:
 	var c := box.get_center()

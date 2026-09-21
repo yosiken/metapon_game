@@ -15,6 +15,7 @@
 - **企画概要（配布用）: [docs/pitch.md](docs/pitch.md)**
 - **口頭説明原稿（約3分・進行メモ付き）: [docs/pitch-script.md](docs/pitch-script.md)**
 - **スピーチ原稿（本文のみ）: [docs/speech.md](docs/speech.md)**
+- **広告・告知用テキスト（ストア/SNS）: [docs/ad-copy.md](docs/ad-copy.md)**
 - 企画書 / 開発仕様書: [docs/game-design.md](docs/game-design.md)
 - **モック（Godot 4 / P0コア検証用）: [godot/](godot/)**
 - アイデアプール（未採用）: [docs/ideas.md](docs/ideas.md)

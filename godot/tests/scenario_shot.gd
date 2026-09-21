@@ -12,7 +12,7 @@ const LAYOUT := [
 var main: Node = null
 var built := false
 var ignite_frame := -1
-var at := [4, 16, 30, 52]
+var at := [8, 34, 64, 110]
 var idx := 0
 var fr := 0
 

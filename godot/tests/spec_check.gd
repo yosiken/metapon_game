@@ -37,8 +37,11 @@ func _check_chain_mult() -> void:
 
 func _check_grid_frames() -> void:
 	print("拍グリッド (4.6.3) BPM=%d" % Cfg.BPM)
-	_expect("8分 frames", float(Cfg.grid_frames(2)), 12.0, 0.001)
-	_expect("16分 frames", float(Cfg.grid_frames(4)), 6.0, 0.001)
+	_expect("1拍 ticks", float(Cfg.grid_frames(1)), 60.0, 0.001)
+	_expect("8分 ticks", float(Cfg.grid_frames(2)), 30.0, 0.001)
+	_expect("16分 ticks", float(Cfg.grid_frames(4)), 15.0, 0.001)
+	# tick rate == BPM であること（4.6.3 の一般則）
+	_expect("TICKS == BPM", float(Cfg.TICKS), float(Cfg.BPM), 0.001)
 
 func _case(name: String, layout: Array, g: float, wt: float, ft: float, a: float, v0: float) -> void:
 	print("\n%s" % name)
@@ -51,7 +54,7 @@ func _case(name: String, layout: Array, g: float, wt: float, ft: float, a: float
 			b.color = int(color)
 			s.ground[c].append(b)
 	var guard := 0
-	while s.stacks.is_empty() and guard < 60:
+	while s.stacks.is_empty() and guard < 120:
 		s.step()
 		guard += 1
 	if s.stacks.is_empty():

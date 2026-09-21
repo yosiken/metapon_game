@@ -2,7 +2,7 @@
 ##   godot --headless --path godot --script res://tests/headless_check.gd
 extends SceneTree
 
-const FRAMES := 60 * 180   # 3分
+const FRAMES := Cfg.TICKS * 180   # 3分
 
 func _init() -> void:
 	var fail := 0
@@ -68,8 +68,8 @@ func _run_and_check(seed_value: int) -> int:
 	var kiwa_rate := 0.0
 	if s.stat_freeze_after_first > 0:
 		kiwa_rate = 100.0 * float(s.stat_kiwa) / float(s.stat_freeze_after_first)
-	print("[seed %d] %dF (%.0fs) Lv%d score=%d 最大連鎖=%d 浮上=%d 沈降=%d 際結氷率=%.0f%% 埋没=%s" % [
-		seed_value, frames_run, float(frames_run) / 60.0, s.level, int(s.score),
+	print("[seed %d] %dT (%.0fs) Lv%d score=%d 最大連鎖=%d 浮上=%d 沈降=%d 際結氷率=%.0f%% 埋没=%s" % [
+		seed_value, frames_run, float(frames_run) / float(Cfg.TICKS), s.level, int(s.score),
 		s.stat_max_chain, s.stat_surfaced, s.stat_sunk, kiwa_rate, str(s.game_over)])
 	if s.stat_surfaced == 0:
 		printerr("[seed %d] 3分回して一度も浮上していない" % seed_value)
@@ -82,7 +82,7 @@ func _check_determinism() -> int:
 	for t in range(2):
 		var s := Sim.new(4242)
 		var bot := XorRng.new(99)
-		for i in range(60 * 60):
+		for i in range(Cfg.TICKS * 60):
 			_bot_seed(s, bot)
 			s.step()
 		res.append([int(s.score), s.frame, s.stat_max_chain, s.stat_surfaced, s.ground_height()])
@@ -98,7 +98,7 @@ func _check_grid_alignment() -> int:
 	var bot := XorRng.new(31337)
 	var checked := 0
 	var bad := 0
-	for i in range(60 * 90):
+	for i in range(Cfg.TICKS * 90):
 		_bot_seed(s, bot)
 		s.step()
 		var gf := s.grid_frames()

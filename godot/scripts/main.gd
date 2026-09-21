@@ -28,11 +28,16 @@ var beat_pulse := 0.0
 var _last_grid := -1
 
 var font: Font
+var audio: GameAudio
+var _ice_tick := -1
 
 func _ready() -> void:
 	font = ThemeDB.fallback_font
 	_recalc_geometry()
 	sim = Sim.new(seed_value)
+	audio = GameAudio.new()
+	add_child(audio)
+	audio.start_bgm()
 	_build_debug_ui()
 	set_process_unhandled_input(true)
 
@@ -59,8 +64,10 @@ func _physics_process(_delta: float) -> void:
 	for i in range(steps):
 		sim.step()
 		_consume_events()
+	audio.sync_bgm(sim.elapsed())
 
 func _consume_events() -> void:
+	_ice_tick = audio.consume(sim, _ice_tick)
 	for e: Dictionary in sim.ev_freeze:
 		chain_pop = 1.0
 		if e["kiwa"]:
@@ -104,6 +111,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_S: slow = not slow
 			KEY_R: _reset()
 			KEY_D: _toggle_debug()
+			KEY_M: audio.enabled = not audio.enabled
 		return
 	if event is InputEventScreenTouch:
 		if event.pressed:
@@ -143,6 +151,7 @@ func _grab(id: int, pos: Vector2) -> void:
 		if sim.ground[col][gi].state == MBlock.State.ICE:
 			return
 		pointers[id] = {"stack": null, "col": col, "idx": gi, "start_idx": gi, "start_y": pos.y}
+		audio.play("grab", 1.0, -6.0)
 
 func _drag(id: int, pos: Vector2) -> void:
 	if not pointers.has(id):
@@ -279,7 +288,7 @@ func _draw_block(b: MBlock, col: int, row: float, alpha: float) -> void:
 
 	match b.state:
 		MBlock.State.FREEZING:
-			var k: float = 0.5 + 0.5 * sin(float(sim.frame) * 0.6)
+			var k: float = 0.5 + 0.5 * sin(sim.elapsed() * 36.0)
 			draw_rect(box, Color(1, 1, 1, (0.35 + 0.35 * k) * alpha))
 		MBlock.State.ICE:
 			_draw_ice(b, box, alpha)
@@ -297,7 +306,7 @@ func _draw_ice(b: MBlock, box: Rect2, alpha: float) -> void:
 	var cracks := 0
 	if grids <= 1:
 		# 際窓: 強く脈動し、縁がシアンに光る（5.8 / 6.4.1）
-		var k: float = 0.5 + 0.5 * sin(float(sim.frame) * 0.9)
+		var k: float = 0.5 + 0.5 * sin(sim.elapsed() * 54.0)
 		draw_rect(box, Color(0.55, 1.0, 1.0, (0.18 + 0.30 * k) * alpha))
 		edge = Color(0.35, 1.0, 1.0, alpha)
 		cracks = 3
@@ -347,7 +356,7 @@ func _predict_apex(s: AirStack) -> float:
 	var f := sim.frame
 	var g := sim.gravity()
 	var best := float(s.base_row) + y
-	for i in range(150):
+	for i in range(int(Cfg.TICKS * 2.5)):
 		var ft := 0.0
 		for grp: Dictionary in s.groups:
 			if grp["melt_at"] > f:
@@ -415,6 +424,9 @@ func _toggle_debug() -> void:
 func _reset() -> void:
 	sim.reset(seed_value)
 	pointers.clear()
+	_ice_tick = -1
+	audio.stop_bgm()
+	audio.start_bgm()
 
 func _build_debug_ui() -> void:
 	var layer := CanvasLayer.new()
@@ -437,6 +449,7 @@ func _build_debug_ui() -> void:
 	_add_check(vb, "拍量子化 (4.6)", sim.quantize_melt, func(v): sim.quantize_melt = v)
 	_add_check(vb, "際結氷 (5.8)", sim.kiwa_enabled, func(v): sim.kiwa_enabled = v)
 	_add_check(vb, "氷は壁 (5.6)", sim.ice_is_wall, func(v): sim.ice_is_wall = v)
+	_add_check(vb, "音 (m)", true, func(v): audio.enabled = v)
 
 	var hb := HBoxContainer.new()
 	vb.add_child(hb)

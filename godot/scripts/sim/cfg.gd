@@ -8,26 +8,32 @@ const COLS := 6
 const ROWS := 12
 const BUFFER_ROWS := 2
 const MAX_STACKS := 3
-const TICKS := 60
-const OVERFLOW_GRACE_FRAMES := 90   # 1.5s
+
+## sim のティックレート。**BPM と同じ値にする**（4.6.3）。
+## こうすると 1拍 = 常に 60 ティック、8分 = 30、16分 = 15 になり、
+## どんな BPM でもグリッド線が必ずティック境界に乗る。
+const TICKS := 128
+const OVERFLOW_GRACE_FRAMES := 192  # 1.5s
 
 # --- 物理 (7.3) ---
 const MATCH_MIN := 3
-const FREEZE_DELAY_FRAMES := 7      # 0.12s
+const FREEZE_DELAY_FRAMES := 15     # 16分音符1つ = 0.117s
 const FREEZE_IMPULSE := 12.0
 const BASE_ACCEL := 8.0
 const V_MAX_UP := 14.0
 const V_MAX_DOWN := 18.0
-const CHAIN_GRACE_FRAMES := 21      # 0.35s
+const CHAIN_GRACE_FRAMES := 45      # 16分音符3つ = 0.352s
 const BUOY_MULT_CAP := 4.0
 const FALL_SPEED := 16.0
 const KIWA_SCORE_MULT := 1.30
 const KIWA_BUOY_MULT := 1.15
 
 # --- 拍 (4.6) ---
-const BPM := 150                    # 900 / BPM が整数であること
+const BPM := 128                    # BGM のテンポ。TICKS と同じ値にすること
 
 # --- レベル進行 (8.1) ---
+# BPM128 では 8分=234ms / 16分=117ms。BPM150 のときより氷が約17%長持ちする。
+# グリッド数は整数しか取れないため、テンポ差はここでは吸収せず dropRate 側で詰める。
 const LEVELS := [
 	{"t":   0, "colors": 3, "drop": 1.2, "g": 1.00, "subdiv": 2, "grids": 4},
 	{"t":  30, "colors": 4, "drop": 1.5, "g": 1.00, "subdiv": 2, "grids": 4},
@@ -51,7 +57,7 @@ const COLORS := [
 	Color("f0efe6"), # 白
 ]
 
-## グリッド1目盛りのフレーム数。BPM150 なら 8分=12 / 16分=6（4.6.3）
+## グリッド1目盛りのティック数。TICKS == BPM なら 1拍=60 / 8分=30 / 16分=15（4.6.3）
 static func grid_frames(subdiv: int) -> int:
 	return int(round(float(TICKS) * 60.0 / float(BPM * subdiv)))
 

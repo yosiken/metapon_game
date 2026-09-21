@@ -74,6 +74,7 @@ xvfb-run -a godot --path godot --script res://tests/scenario_shot.gd --resolutio
 | §10 モード / チュートリアル | ✕ |
 | §11.1 音 | ○（BGM + SE 5種。割り当てと実測は `asetts/sound/README.md`） |
 | §11.1 振動 | ✕ |
+| §11.1 水面到達の演出（リップル/スコアポップアップ/脱出気泡） | ○ |
 
 ## モックでの仕様からの逸脱
 

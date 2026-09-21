@@ -27,6 +27,11 @@ var chain_pop := 0.0
 var beat_pulse := 0.0
 var _last_grid := -1
 
+# 浮上成功を体感させるための演出（view専用。sim状態には影響しない）
+var ripples: Array = []   # 水面のリップル: [{x, w, t, dur}]
+var popups: Array = []    # 獲得スコアのポップアップ: [{text, x, y, t, dur, size}]
+var escapes: Array = []   # 水面を突き破って飛んでいく気泡: [{x, y, vx, vy, t, dur, r}]
+
 var font: Font
 var audio: GameAudio
 var _ice_tick := -1
@@ -74,19 +79,60 @@ func _consume_events() -> void:
 			flash = maxf(flash, 0.45)
 			shake = maxf(shake, 4.0)
 	for e: Dictionary in sim.ev_surface:
-		flash = maxf(flash, 0.7)
-		shake = maxf(shake, 7.0)
+		_on_surface(e)
 	var gf := sim.grid_frames()
 	var g := int(sim.frame / gf)
 	if g != _last_grid:
 		_last_grid = g
 		beat_pulse = 1.0
 
+## 浮上イベント1件を、演出3点（リップル・スコアポップアップ・脱出気泡）に変換する。
+## 「消える」ではなく「突き破って出ていく」ことが伝わるようにする。
+func _on_surface(e: Dictionary) -> void:
+	flash = maxf(flash, 0.5)
+	shake = maxf(shake, 6.0)
+	var cols: Array = e.get("cols", [])
+	if cols.is_empty():
+		cols = [int(Cfg.COLS / 2)]
+	var cmin: int = cols.min()
+	var cmax: int = cols.max()
+	var cx: float = origin.x + (float(cmin) + float(cmax) + 1.0) * 0.5 * cell
+	var surf_y: float = origin.y - float(Cfg.ROWS) * cell
+
+	# ① 水面のリップル: 「どこで」成功したかを空間的に示す
+	ripples.append({"x": cx, "w": (float(cmax - cmin) + 1.0) * cell, "t": 0.0, "dur": 0.55})
+
+	# ② 獲得スコアのポップアップ: 「どれだけ」の価値だったかを数字で示す
+	popups.append({
+		"text": "+%d" % int(round(float(e.get("gained", 0.0)))),
+		"x": cx, "y": surf_y, "t": 0.0, "dur": 1.1,
+		"size": 20.0 + minf(float(e["chain"]) * 2.0, 16.0),
+	})
+
+	# ③ 脱出する気泡: 消滅ではなく「画面の外へ飛び出していく」ことを見せる
+	for c in cols:
+		for k in range(5):
+			escapes.append({
+				"x": origin.x + (float(c) + 0.5) * cell + randf_range(-cell * 0.15, cell * 0.15),
+				"y": surf_y, "t": 0.0, "dur": randf_range(0.5, 0.85),
+				"vy": randf_range(220.0, 340.0), "vx": randf_range(-30.0, 30.0),
+				"r": randf_range(2.5, 5.0),
+			})
+
 func _process(delta: float) -> void:
 	flash = maxf(0.0, flash - delta * 2.2)
 	shake = maxf(0.0, shake - delta * 28.0)
 	chain_pop = maxf(0.0, chain_pop - delta * 2.5)
 	beat_pulse = maxf(0.0, beat_pulse - delta * 5.0)
+	for r: Dictionary in ripples:
+		r["t"] += delta
+	ripples = ripples.filter(func(r): return r["t"] < r["dur"])
+	for p: Dictionary in popups:
+		p["t"] += delta
+	popups = popups.filter(func(p): return p["t"] < p["dur"])
+	for g: Dictionary in escapes:
+		g["t"] += delta
+	escapes = escapes.filter(func(g): return g["t"] < g["dur"])
 	_update_readout()
 	queue_redraw()
 
@@ -187,7 +233,10 @@ func _draw() -> void:
 	_draw_stacks()
 	_draw_falling()
 	_draw_prediction()
+	_draw_ripples()
+	_draw_escapes()
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	_draw_popups()
 	_draw_hud()
 	if flash > 0.01:
 		draw_rect(Rect2(0, 0, VW, VH), Color(1, 1, 1, flash * 0.35))
@@ -332,6 +381,42 @@ func _draw_symbol(color_idx: int, box: Rect2, alpha: float) -> void:
 			draw_rect(Rect2(c - Vector2(s, s * 0.32), Vector2(s * 2, s * 0.64)), ink)
 			draw_rect(Rect2(c - Vector2(s * 0.32, s), Vector2(s * 0.64, s * 2)), ink)
 
+## 水面のリップル: 浮上した「場所」を空間的に示す（成功を体感させる演出 #1）。
+func _draw_ripples() -> void:
+	var surf_y := origin.y - float(Cfg.ROWS) * cell
+	for r: Dictionary in ripples:
+		var t: float = clampf(r["t"] / r["dur"], 0.0, 1.0)
+		var half_w: float = lerpf(r["w"] * 0.4, r["w"] * 1.7, t)
+		var alpha: float = (1.0 - t) * 0.8
+		var sink: float = t * 10.0
+		draw_line(Vector2(r["x"] - half_w, surf_y + sink), Vector2(r["x"] + half_w, surf_y + sink),
+			Color(0.85, 0.98, 1.0, alpha), 3.0 * (1.0 - t) + 1.0)
+		draw_line(Vector2(r["x"] - half_w * 0.6, surf_y + sink * 1.6), Vector2(r["x"] + half_w * 0.6, surf_y + sink * 1.6),
+			Color(0.85, 0.98, 1.0, alpha * 0.5), 2.0)
+
+## 水面を突き破って画面外へ飛んでいく気泡: 「消える」ではなく
+## 「脱出する」ことを見せる演出 #2（成功を体感させる演出 #2）。
+func _draw_escapes() -> void:
+	for g: Dictionary in escapes:
+		var t: float = g["t"]
+		var x: float = g["x"] + g["vx"] * t
+		var y: float = g["y"] - g["vy"] * t
+		var alpha: float = clampf(1.0 - t / g["dur"], 0.0, 1.0)
+		draw_circle(Vector2(x, y), g["r"] * (1.0 - t * 0.3), Color(0.85, 0.98, 1.0, alpha * 0.85))
+		draw_circle(Vector2(x, y), g["r"] * 0.4, Color(1, 1, 1, alpha))
+
+## 獲得スコアのポップアップ: 連鎖の価値を数字で示す（成功を体感させる演出 #3）。
+## 画面座標系で描く（カメラシェイクの影響を受けない）ため _draw() の
+## transform リセット後に呼ぶこと。
+func _draw_popups() -> void:
+	for p: Dictionary in popups:
+		var t: float = p["t"] / p["dur"]
+		var y: float = p["y"] - t * 46.0
+		var alpha: float = 1.0 - smoothstep(0.6, 1.0, t)
+		var pop: float = 1.0 + (1.0 - clampf(t / 0.25, 0.0, 1.0)) * 0.4
+		draw_string(font, Vector2(p["x"] - 60.0, y), p["text"], HORIZONTAL_ALIGNMENT_CENTER, 120.0,
+			int(p["size"] * pop), Color(1.0, 0.92, 0.5, alpha))
+
 ## 浮上予測ライン（6.4）。本作最大のオンボーディング装置。
 func _draw_prediction() -> void:
 	var bw := cell * float(Cfg.COLS)
@@ -425,6 +510,9 @@ func _reset() -> void:
 	sim.reset(seed_value)
 	pointers.clear()
 	_ice_tick = -1
+	ripples.clear()
+	popups.clear()
+	escapes.clear()
 	audio.stop_bgm()
 	audio.start_bgm()
 

@@ -39,7 +39,7 @@ var stat_surfaced: int = 0
 var stat_sunk: int = 0
 var ev_freeze: Array = []     # [{ "k": int, "chain": int, "kiwa": bool, "col": int, "row": float }]
 var ev_melt: Array = []       # [{ "col": int, "row": float }]
-var ev_surface: Array = []    # [{ "count": int, "chain": int }]
+var ev_surface: Array = []    # [{ "count", "chain", "gained", "cols", "row" }]
 var ev_land: Array = []
 
 func _init(seed_value: int = 12345) -> void:
@@ -299,10 +299,15 @@ func _check_surface() -> void:
 					if b.kind == MBlock.Kind.ROCK:
 						rocks += 1
 			# 9.2 浮上スコア
-			score += float(n) * 50.0 * Cfg.chain_mult(s.max_chain)
-			score += float(rocks) * 150.0
+			var gained := float(n) * 50.0 * Cfg.chain_mult(s.max_chain) + float(rocks) * 150.0
+			score += gained
 			stat_surfaced += n
-			ev_surface.append({"count": n, "chain": s.max_chain})
+			# view 側で「どこで・いくら」成功したかを表示するためのメタデータ。
+			# 判定/スコア計算そのものには使わない（sim の純粋性は保つ）。
+			ev_surface.append({
+				"count": n, "chain": s.max_chain, "gained": gained,
+				"cols": s.cols.keys(), "row": float(Cfg.ROWS),
+			})
 			stacks.remove_at(i)
 
 # ---------------------------------------------------------------- 7. 着地

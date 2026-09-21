@@ -1,0 +1,4 @@
+# Godot 4 のインポートキャッシュ
+.godot/
+/android/
+export_presets.cfg

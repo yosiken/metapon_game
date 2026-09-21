@@ -4,7 +4,9 @@ extends Node2D
 const VW := 540.0
 const VH := 960.0
 const HUD_H := 96.0
-const THUMB_H := 115.0
+## 盤面の下に空ける高さ。ボタン列（56px）と、スマホのブラウザ下部
+## ツールバーに食われるぶんの余白を兼ねる。
+const THUMB_H := 150.0
 
 var sim: Sim
 var seed_value: int = 20260921
@@ -68,12 +70,18 @@ func _ready() -> void:
 	set_process_unhandled_input(true)
 
 func _recalc_geometry() -> void:
-	cell = minf(VW * 0.94 / float(Cfg.COLS), (VH * 0.78) / float(Cfg.ROWS))
+	# 盤面はボタン列より上に収める。THUMB_H はボタンと、スマホのブラウザ
+	# 下部ツールバーに食われる余白の両方を兼ねている。
+	cell = minf(VW * 0.94 / float(Cfg.COLS), (VH - HUD_H - THUMB_H) / float(Cfg.ROWS))
 	var bw := cell * float(Cfg.COLS)
 	origin = Vector2((VW - bw) * 0.5, VH - THUMB_H)
-	# 親指セーフゾーンにボタンを並べる。タップ領域は 44pt 以上を確保する。
-	var by := VH - THUMB_H + 24.0
+	# ボタンを並べる。タップ領域は 44pt 以上を確保する。
+	# スマホのブラウザは画面下部にツールバーを重ねてくるため、
+	# 画面の一番下には置かない（下端から 70px 以上空ける）。
+	# 盤面の下端（VH - THUMB_H）のすぐ下に置く。画面の一番下には置かない
+	# （スマホのブラウザは下部にツールバーを重ねてくるため）。
 	var bh := 56.0
+	var by := VH - THUMB_H + 16.0
 	btn_pause = Rect2(24.0, by, 130.0, bh)
 	btn_debug = Rect2(VW - 154.0, by, 130.0, bh)
 	btn_retry = Rect2(VW * 0.5 - 65.0, by, 130.0, bh)
@@ -579,13 +587,14 @@ func _draw_hud() -> void:
 	_draw_buttons()
 
 	# 実測の性能。処理落ちしていると sim が目標ティックレートに届かない。
+	# 画面下端はスマホのブラウザUIに隠れるため、上部のHUD内に置く。
 	var hz_ok: bool = sim_hz_shown >= Cfg.TICKS - 3
-	draw_string(font, Vector2(VW - 150.0, VH - 8.0),
+	draw_string(font, Vector2(VW - 158.0, 80.0),
 		"%d fps / sim %d Hz" % [fps_shown, sim_hz_shown],
-		HORIZONTAL_ALIGNMENT_RIGHT, 142.0, 13,
-		Color(0.5, 0.62, 0.72, 0.8) if hz_ok else Color(1.0, 0.55, 0.45, 0.95))
+		HORIZONTAL_ALIGNMENT_RIGHT, 150.0, 13,
+		Color(0.5, 0.62, 0.72, 0.85) if hz_ok else Color(1.0, 0.55, 0.45, 1.0))
 	if slow:
-		draw_string(font, Vector2(8.0, VH - 8.0), "SLOW 0.25x", HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
+		draw_string(font, Vector2(18.0, 80.0), "SLOW 0.25x", HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
 			Color(1, 1, 0.6, 0.9))
 
 # ---------------------------------------------------------------- デバッグUI

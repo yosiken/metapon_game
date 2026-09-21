@@ -12,6 +12,7 @@
 
 指は2本、同時に浮く氷塊は最大3本。どれを伸ばしてどれを沈めるかを、毎秒選び続けるゲーム。
 
-- **企画概要（プレゼン用）: [docs/pitch.md](docs/pitch.md)**
+- **企画概要（配布用）: [docs/pitch.md](docs/pitch.md)**
+- **口頭説明原稿（約3分）: [docs/pitch-script.md](docs/pitch-script.md)**
 - 企画書 / 開発仕様書: [docs/game-design.md](docs/game-design.md)
 - アイデアプール（未採用）: [docs/ideas.md](docs/ideas.md)

@@ -6,7 +6,7 @@
 ## 動かす
 
 ```
-godot --path godot            # Godot 4.3 / 4.4 で動作確認済み
+godot --path godot            # Godot 4.3 / 4.4.1 / 4.7 で動作確認済み
 ```
 
 > **ティックレートは 128Hz**（BGM の BPM 128 に一致させている。仕様書 §4.6.3）。
@@ -36,6 +36,7 @@ P0 の問い（核そのものが面白いか）を、後から足した仕組�
 ```
 godot --headless --path godot --script res://tests/spec_check.gd      # 仕様書 付録B との一致
 godot --headless --path godot --script res://tests/headless_check.gd  # 3分×2シードのスモーク + 決定性
+godot --headless --path godot --script res://tests/audio_check.gd     # 音源が拍に乗るかの実測
 ```
 
 `spec_check` は付録B「数値の検算シート」の5ケースを実際に盤面で再現し、
@@ -71,7 +72,7 @@ xvfb-run -a godot --path godot --script res://tests/scenario_shot.gd --resolutio
 | §8.3.3 速度プリセット | △（デバッグの速度スライダーのみ） |
 | §9 スコア | △（結氷・浮上のみ。評価画面なし） |
 | §10 モード / チュートリアル | ✕ |
-| §11.1 音 | △（再生層は実装済み。音源は `asetts/sound/`。割り当ては `asetts/sound/README.md`） |
+| §11.1 音 | ○（BGM + SE 5種。割り当てと実測は `asetts/sound/README.md`） |
 | §11.1 振動 | ✕ |
 
 ## モックでの仕様からの逸脱
@@ -82,6 +83,8 @@ xvfb-run -a godot --path godot --script res://tests/scenario_shot.gd --resolutio
    列ごとに海底の高さが違う場合、見た目が一瞬飛ぶ。
 3. **際結氷と着地に専用音が無い。** 既存音のピッチを振って代用している（`asetts/sound/README.md`）。
    特に際結氷（§5.8）は結氷と明確に区別できる音でないと、狙えているかが分からない。
+4. **SE の先頭無音（42ms）と長さをコード側で補正している。** 本来は音源側で詰めるべき。
+   詳細と実測値は `asetts/sound/README.md`。
 
 ## テストプレイで見てほしいこと
 

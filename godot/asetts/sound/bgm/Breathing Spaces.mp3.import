@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://by8rmu0r633qe"
+path="res://.godot/imported/Breathing Spaces.mp3-174534879c8fcfc0baaa5fa95f89027a.mp3str"
+
+[deps]
+
+source_file="res://asetts/sound/bgm/Breathing Spaces.mp3"
+dest_files=["res://.godot/imported/Breathing Spaces.mp3-174534879c8fcfc0baaa5fa95f89027a.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

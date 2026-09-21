@@ -51,10 +51,17 @@ git checkout main && git merge --ff-only claude/mobile-browser-game-design-lqwx0
 godot --headless --path godot --script res://tests/spec_check.gd      # 仕様書 付録B の数値と一致するか
 godot --headless --path godot --script res://tests/headless_check.gd  # スモーク + 決定性 + 拍量子化
 godot --headless --path godot --script res://tests/audio_check.gd     # 音源が拍に乗っているか
+godot --headless --path godot --script res://tests/special_check.gd   # 特別チップの供給と発動（7.2.1）
 ```
 
 `spec_check` が落ちたら物理かグリッドが壊れている。`headless_check` の
 決定性チェックが落ちたら sim層に非決定的な処理が混入している。
+
+**盤面を組んで検証するテストでは、意図したマッチ以外を作らないこと。**
+`_ignite` には「1列につき水中スタックは1本」という制約があり、複数のマッチが
+競合するとどちらが先に着火するか次第になって、何を測ったのか分からなくなる。
+また海底のマッチは `min_row` 以上を丸ごと持ち上げるので、**検証は座標ではなく
+ブロックの参照で行う**こと（検証時にはもう海底に無い）。
 
 ### スクリーンショット（要 xvfb）
 

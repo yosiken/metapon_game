@@ -20,6 +20,11 @@ var overflow_since: int = -1
 var drop_accum: float = 0.0
 var color_bag: Array = []
 
+# --- 特別チップの供給 (7.2.1 / 8.2.1) ---
+var special_queue: Array = []      # 次に降らせる Kind。先頭から使う
+var vortex_credit: int = 0         # 打ち上げたブロック数（渦石用）
+var resonance_credit: int = 0      # 同上。山が半分以上のあいだだけ進む
+
 var _next_id: int = 1
 var _next_group: int = 1
 var _ground_dict: Dictionary = {}   # _ground_as_dict() のキャッシュ
@@ -30,6 +35,7 @@ var g_mult: float = 1.0
 var quantize_melt: bool = true   # 4.6 拍量子化
 var kiwa_enabled: bool = true    # 5.8 際結氷
 var ice_is_wall: bool = true     # 5.6 氷ブロックは壁
+var specials_enabled: bool = true # 7.2.1 特別チップ
 var level_override: int = 0      # 0 = 自動
 
 # --- 統計・イベント（view と音が読む。sim は書くだけ） ---
@@ -37,11 +43,16 @@ var stat_max_chain: int = 0
 var stat_kiwa: int = 0
 var stat_freeze_after_first: int = 0
 var stat_surfaced: int = 0
+## 特別チップの [共鳴石, 渦石]。降った数と、実際に発動した数 (7.2.1)
+var stat_special_spawned: Array = [0, 0]
+var stat_special_fired: Array = [0, 0]
 var stat_sunk: int = 0
 var ev_freeze: Array = []     # [{ "k": int, "chain": int, "kiwa": bool, "col": int, "row": float }]
 var ev_melt: Array = []       # [{ "col": int, "row": float }]
 var ev_surface: Array = []    # [{ "count", "chain", "gained", "cols", "row" }]
 var ev_land: Array = []
+## 特別チップが発動した記録。view の演出用で、判定には使わない
+var ev_special: Array = []    # [{ "kind": int, "col": int, "row": float, "cells": int }]
 
 func _init(seed_value: int = 12345) -> void:
 	reset(seed_value)
@@ -70,6 +81,11 @@ func reset(seed_value: int) -> void:
 	stat_kiwa = 0
 	stat_freeze_after_first = 0
 	stat_surfaced = 0
+	stat_special_spawned = [0, 0]
+	stat_special_fired = [0, 0]
+	special_queue = []
+	vortex_credit = 0
+	resonance_credit = 0
 	stat_sunk = 0
 	_clear_events()
 
@@ -78,6 +94,7 @@ func _clear_events() -> void:
 	ev_melt = []
 	ev_surface = []
 	ev_land = []
+	ev_special = []
 
 # ---------------------------------------------------------------- パラメータ
 
@@ -122,14 +139,54 @@ func _supply() -> void:
 		_spawn_debris()
 
 func _spawn_debris() -> void:
-	var col := _pick_column()
-	var color := _pick_color(col)
+	var special: int = -1
+	if not special_queue.is_empty():
+		special = special_queue.pop_front()
+	# 特別チップは最も低い列へ確定で落とす。数が少ないので、瓦礫に埋もれて
+	# 使われないまま終わると供給した意味がなくなる (8.2.1)
+	var col: int = _lowest_column() if special >= 0 else _pick_column()
 	var b := MBlock.new()
 	b.id = _next_id
 	_next_id += 1
-	b.color = color
-	b.kind = _pick_kind()
+	b.color = _pick_color(col)
+	b.kind = special if special >= 0 else _pick_kind()
+	if b.is_special():
+		stat_special_spawned[b.kind - MBlock.Kind.RESONANCE] += 1
 	falling.append({"col": col, "y": float(Cfg.ROWS + Cfg.BUFFER_ROWS), "block": b})
+
+## 最も低い列。同率は rng で選ぶ（決定性のため randi は使わない）
+func _lowest_column() -> int:
+	var best := []
+	var lo := 1 << 30
+	for c in range(Cfg.COLS):
+		var h := int(_stack_top_row(c))
+		if h < lo:
+			lo = h
+			best = [c]
+		elif h == lo:
+			best.append(c)
+	return best[rng.next_int(best.size())]
+
+## 打ち上げた数に応じて特別チップを積む (8.2.1)
+##
+## 渦石は無条件。共鳴石は**山が半分以上あるあいだに打ち上げた数**だけを数える。
+## 追い詰められていて、かつ反撃できている人にだけ届く救済にするため。
+func _accrue_specials(surfaced: int) -> void:
+	if not specials_enabled:
+		return
+	vortex_credit += surfaced
+	if ground_height() >= Cfg.RESCUE_HEIGHT:
+		resonance_credit += surfaced
+	while vortex_credit >= Cfg.VORTEX_PER_SURFACED:
+		vortex_credit -= Cfg.VORTEX_PER_SURFACED
+		_queue_special(MBlock.Kind.VORTEX)
+	while resonance_credit >= Cfg.RESONANCE_PER_SURFACED:
+		resonance_credit -= Cfg.RESONANCE_PER_SURFACED
+		_queue_special(MBlock.Kind.RESONANCE)
+
+func _queue_special(kind: int) -> void:
+	if special_queue.size() < Cfg.SPECIAL_QUEUE_MAX:
+		special_queue.append(kind)
 
 ## 低い列に偏って供給する。weight(c) = (maxH - h(c) + 1) ^ 1.5
 func _pick_column() -> int:
@@ -305,6 +362,7 @@ func _check_surface() -> void:
 			var gained := float(n) * 50.0 * Cfg.chain_mult(s.max_chain) + float(rocks) * 150.0
 			score += gained
 			stat_surfaced += n
+			_accrue_specials(n)
 			# view 側で「どこで・いくら」成功したかを表示するためのメタデータ。
 			# 判定/スコア計算そのものには使わない（sim の純粋性は保つ）。
 			ev_surface.append({
@@ -565,6 +623,11 @@ func _ignite(body: Dictionary, comp: Array) -> void:
 		min_row = mini(min_row, cell.y)
 		involved[cell.x] = true
 
+	# 特別チップの発動 (7.2.1)。海底から持ち上げる**前**に効かせる。
+	# 持ち上げた後では、書き換えたい隣接ブロックが盤面から消えている。
+	if specials_enabled:
+		_fire_specials(body, comp)
+
 	var target: AirStack = stack
 	if is_ground:
 		target = _lift_from_ground(involved.keys(), min_row)
@@ -575,6 +638,86 @@ func _ignite(body: Dictionary, comp: Array) -> void:
 
 	ev_freeze.append({"k": k, "chain": chain, "kiwa": kiwa, "col": comp[0].x,
 		"row": float(target.base_row) + target.y + float(comp[0].y - min_row)})
+
+## 特別チップの効果 (7.2.1)
+##
+## comp（いま結氷した連結成分）に特別チップが含まれていたら、その周囲
+## SPECIAL_RADIUS マスへ効果を及ぼす。対象は**同じ body の中だけ**。
+## 海底のチップは海底へ、水中スタックのチップはそのスタックへ効く。
+##
+##   共鳴石 (RESONANCE): 隣接ブロックの色を、巻き込んだマッチの色に統一する
+##   渦石   (VORTEX):    隣接ブロックの色をシャッフルする
+##
+## 発動したチップは通常ブロックへ戻る（使い切り）。ただし書き換える相手が
+## 1つも無かった場合は消費しない。
+##
+## どちらも書き換えるのは **color だけ**で kind は保つ。特別チップ同士が
+## 隣り合った場合、色は変わるが特別チップのままでいる。
+func _fire_specials(body: Dictionary, comp: Array) -> void:
+	var cols_dict: Dictionary = body["cols"]
+	var hit := {}
+	for cell in comp:
+		hit[cell] = true
+	for cell in comp:
+		var b: MBlock = cols_dict[cell.x][cell.y]
+		if not b.is_special():
+			continue
+		var targets := _neighbors_of(cols_dict, cell, hit)
+		if targets.is_empty():
+			continue
+		match b.kind:
+			MBlock.Kind.RESONANCE:
+				for t: Vector2i in targets:
+					(cols_dict[t.x][t.y] as MBlock).color = b.color
+			MBlock.Kind.VORTEX:
+				_shuffle_colors(cols_dict, targets)
+		stat_special_fired[b.kind - MBlock.Kind.RESONANCE] += 1
+		ev_special.append({"kind": b.kind, "col": cell.x,
+			"row": float(cell.y), "cells": targets.size()})
+		# 使い切り。結氷は「消滅」ではなく、浮上できなかったスタックは着地して
+		# 海底へ戻る（_check_landing）。そのままだと同じチップが沈むたびに
+		# 何度でも発動し、実測で1個が4回発動した。1回で通常ブロックへ戻す。
+		# 重さ・浮力は NORMAL と同値なので、浮上中に変えても物理は不連続にならない。
+		b.kind = MBlock.Kind.NORMAL
+
+## cell の周囲 SPECIAL_RADIUS マスのうち、色を書き換えられるセル。
+## comp に含まれるセル（これから氷になる）は除く。
+## 列→行の昇順で返す。決定性のため順序を固定する必要がある。
+func _neighbors_of(cols_dict: Dictionary, cell: Vector2i, exclude: Dictionary) -> Array:
+	var out := []
+	var r := Cfg.SPECIAL_RADIUS
+	for dx in range(-r, r + 1):
+		var c: int = cell.x + dx
+		if not cols_dict.has(c):
+			continue
+		var arr: Array = cols_dict[c]
+		for dy in range(-r, r + 1):
+			if dx == 0 and dy == 0:
+				continue
+			var y: int = cell.y + dy
+			if y < 0 or y >= arr.size():
+				continue
+			var nb := Vector2i(c, y)
+			if exclude.has(nb):
+				continue
+			if not (arr[y] as MBlock).color_is_mutable():
+				continue
+			out.append(nb)
+	return out
+
+## Fisher-Yates。rng のみを使う（randi 等を混ぜると決定性が壊れる。12.2）
+func _shuffle_colors(cols_dict: Dictionary, cells: Array) -> void:
+	var colors := []
+	for t: Vector2i in cells:
+		colors.append((cols_dict[t.x][t.y] as MBlock).color)
+	for i in range(colors.size() - 1, 0, -1):
+		var j := rng.next_int(i + 1)
+		var tmp = colors[i]
+		colors[i] = colors[j]
+		colors[j] = tmp
+	for i in range(cells.size()):
+		var t: Vector2i = cells[i]
+		(cols_dict[t.x][t.y] as MBlock).color = colors[i]
 
 ## 海底の min_row 以上を持ち上げて新しいスタックを作る (4.2)
 func _lift_from_ground(cols_involved: Array, min_row: int) -> AirStack:

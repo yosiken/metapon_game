@@ -70,6 +70,8 @@ const ICE_FRAMES := [
 	"res://asetts/chips/ice/ice2_r3c2.png",
 ]
 var ice_tex: Array = []
+## 特別チップが発動した位置の衝撃波（7.2.1）
+var bursts: Array = []
 
 ## 背景の写真。元画像は tools/make_bg.py で 9:16 に切り出して落としてある
 const BG_PATH := "res://asetts/bg/underwater.png"
@@ -153,6 +155,8 @@ func _consume_events() -> void:
 			shake = maxf(shake, 4.0)
 	for e: Dictionary in sim.ev_surface:
 		_on_surface(e)
+	for e: Dictionary in sim.ev_special:
+		_on_special(e)
 	var gf := sim.grid_frames()
 	var g := int(sim.frame / gf)
 	if g != _last_grid:
@@ -192,6 +196,20 @@ func _on_surface(e: Dictionary) -> void:
 				"r": randf_range(2.5, 5.0),
 			})
 
+## 特別チップの発動（7.2.1）。書き換えの「範囲」が一目で分かるよう、
+## 効果範囲と同じ大きさの波を出す。何が起きたのか分からないまま盤面の色が
+## 変わるのが一番まずい。
+func _on_special(e: Dictionary) -> void:
+	flash = maxf(flash, 0.30)
+	shake = maxf(shake, 3.0)
+	var r := float(Cfg.SPECIAL_RADIUS) + 0.5
+	bursts.append({
+		"x": origin.x + (float(e["col"]) + 0.5) * cell,
+		"row": float(e["row"]), "col": int(e["col"]),
+		"kind": int(e["kind"]), "w": r * 2.0 * cell,
+		"t": 0.0, "dur": 0.65,
+	})
+
 func _process(delta: float) -> void:
 	flash = maxf(0.0, flash - delta * 2.2)
 	shake = maxf(0.0, shake - delta * 28.0)
@@ -206,6 +224,9 @@ func _process(delta: float) -> void:
 	for g: Dictionary in escapes:
 		g["t"] += delta
 	escapes = escapes.filter(func(g): return g["t"] < g["dur"])
+	for b: Dictionary in bursts:
+		b["t"] += delta
+	bursts = bursts.filter(func(b): return b["t"] < b["dur"])
 	_hz_timer += delta
 	if _hz_timer >= 1.0:
 		sim_hz_shown = int(round(float(_sim_steps) / _hz_timer))
@@ -337,6 +358,7 @@ func _draw() -> void:
 	_draw_prediction()
 	_draw_ripples()
 	_draw_escapes()
+	_draw_bursts()
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	_draw_popups()
 	_draw_hud()
@@ -480,6 +502,8 @@ func _draw_block(b: MBlock, col: int, row: float, alpha: float) -> void:
 		draw_rect(box, Color(1, 1, 1, 0.5 * alpha), false, 2.0)
 	if b.kind != MBlock.Kind.ROCK:
 		_draw_symbol(b.color, box, alpha)
+	if b.is_special():
+		_draw_special_mark(b, box, alpha)
 
 	match b.state:
 		MBlock.State.FREEZING:
@@ -559,6 +583,78 @@ func _symbol_shape(color_idx: int, c: Vector2, s: float, ink: Color) -> void:
 		3: draw_colored_polygon(PackedVector2Array([                # 紫（チップもカイト）
 			c + Vector2(0, -s), c + Vector2(s * 0.80, 0), c + Vector2(0, s), c + Vector2(-s * 0.80, 0)]), ink)
 		4: draw_rect(Rect2(c - Vector2(s * 0.84, s * 0.84), Vector2(s * 1.68, s * 1.68)), ink)  # 白
+
+## 特別チップの標識（7.2.1）。
+##
+## チップは通常の色を持つので、色とシンボルはそのまま残す（11.2 の判別は
+## 崩さない）。その上に**白い標識**を重ねて「特別」を伝える。氷の青とは
+## 別チャンネルにしたいので、青系は使わない。
+##
+##   共鳴石: 外へ広がる同心円。周囲へ効果が伝わることを形で示す
+##   渦石:   回る渦巻き。かき混ぜることを形で示す
+func _draw_special_mark(b: MBlock, box: Rect2, alpha: float) -> void:
+	var c := box.get_center()
+	var s := box.size.x * 0.5
+	var t := sim.elapsed()
+	# 枠を脈動させる。小さいセルでも「普通じゃない」ことが周辺視野で分かる
+	var pulse: float = 0.55 + 0.45 * sin(t * 6.0 + float(b.id))
+	draw_rect(box, Color(1.0, 1.0, 0.94, (0.35 + 0.45 * pulse) * alpha), false, 2.5)
+
+	var ink := Color(1.0, 1.0, 0.92, 0.95 * alpha)
+	var dark := Color(0.05, 0.08, 0.10, 0.75 * alpha)
+	# 中心は色シンボルの領域なので空けておく。標識で潰すと、そのブロックだけ
+	# 色覚対応の手がかりが消える（11.2）。symbol は半径 0.44*s、縁取りで 0.57*s。
+	const R_IN := 0.62
+	const R_OUT := 0.98
+	if b.kind == MBlock.Kind.RESONANCE:
+		# 外周で輪が外へ送り出される
+		for i in range(2):
+			var ph: float = fmod(t * 0.9 + float(i) / 2.0, 1.0)
+			var rr: float = s * lerpf(R_IN, R_OUT, ph)
+			var a: float = (1.0 - ph) * 0.95
+			draw_arc(c, rr + 1.0, 0.0, TAU, 22, dark * Color(1, 1, 1, a), 3.4)
+			draw_arc(c, rr, 0.0, TAU, 22, ink * Color(1, 1, 1, a), 1.8)
+	else:
+		# 外周だけを使った渦。中心へは巻き込まない
+		var pts := PackedVector2Array()
+		var spin := t * 2.2
+		for i in range(25):
+			var u := float(i) / 24.0
+			var a := spin + u * TAU * 0.9
+			var rr := s * lerpf(R_IN, R_OUT, u)
+			pts.append(c + Vector2(cos(a), sin(a)) * rr)
+		for i in range(pts.size() - 1):
+			draw_line(pts[i], pts[i + 1], dark, 3.6)
+		for i in range(pts.size() - 1):
+			draw_line(pts[i], pts[i + 1], ink, 1.8)
+		# 渦の先端に矢羽根を置いて回転方向を示す
+		var tip: Vector2 = pts[pts.size() - 1]
+		var prev: Vector2 = pts[pts.size() - 3]
+		var dir := (tip - prev).normalized()
+		var nrm := Vector2(-dir.y, dir.x)
+		draw_colored_polygon(PackedVector2Array([
+			tip + dir * s * 0.20, tip + nrm * s * 0.13, tip - nrm * s * 0.13]), ink)
+
+## 特別チップが発動した瞬間の衝撃波。書き換えた範囲をそのまま見せる。
+func _draw_bursts() -> void:
+	for b: Dictionary in bursts:
+		var t: float = clampf(b["t"] / b["dur"], 0.0, 1.0)
+		var cy: float = origin.y - (float(b["row"]) + 0.5) * cell
+		var pos := Vector2(b["x"], cy)
+		var rr: float = lerpf(cell * 0.3, float(b["w"]) * 0.5, sqrt(t))
+		var a: float = (1.0 - t) * 0.9
+		var col := Color(1.0, 1.0, 0.92, a)
+		draw_arc(pos, rr, 0.0, TAU, 32, col, 4.0 * (1.0 - t) + 1.2)
+		if int(b["kind"]) == MBlock.Kind.VORTEX:
+			# 渦石は回しながら広げる
+			for i in range(6):
+				var ang: float = t * 6.0 + float(i) * TAU / 6.0
+				draw_line(pos + Vector2(cos(ang), sin(ang)) * rr * 0.45,
+					pos + Vector2(cos(ang), sin(ang)) * rr,
+					Color(1.0, 1.0, 0.92, a * 0.7), 2.0)
+		else:
+			# 共鳴石は内側にもう1本
+			draw_arc(pos, rr * 0.62, 0.0, TAU, 28, Color(1.0, 1.0, 0.92, a * 0.6), 2.0)
 
 ## 水面のリップル: 浮上した「場所」を空間的に示す（成功を体感させる演出 #1）。
 func _draw_ripples() -> void:
@@ -727,6 +823,7 @@ func _reset() -> void:
 	ripples.clear()
 	popups.clear()
 	escapes.clear()
+	bursts.clear()
 	audio.stop_bgm()
 	audio.start_bgm()
 
@@ -757,6 +854,7 @@ func _build_debug_ui() -> void:
 	_add_check(vb, "拍量子化 (4.6)", sim.quantize_melt, func(v): sim.quantize_melt = v)
 	_add_check(vb, "際結氷 (5.8)", sim.kiwa_enabled, func(v): sim.kiwa_enabled = v)
 	_add_check(vb, "氷は壁 (5.6)", sim.ice_is_wall, func(v): sim.ice_is_wall = v)
+	_add_check(vb, "特別チップ (7.2.1)", sim.specials_enabled, func(v): sim.specials_enabled = v)
 	_add_check(vb, "音 (m)", true, func(v): audio.enabled = v)
 
 	var hb := HBoxContainer.new()

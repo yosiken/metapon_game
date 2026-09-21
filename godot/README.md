@@ -37,7 +37,8 @@ godot --path godot            # Godot 4.3 / 4.4.1 / 4.7 で動作確認済み
 下回ると赤く出る。ブラウザの下部ツールバーに隠れないよう上端に置いてある。
 
 デバッグパネルで速度・沈降係数・レベル固定を変えられるほか、
-**拍量子化（§4.6）・際結氷（§5.8）・氷は壁（§5.6）を個別にオフにできる**。
+**拍量子化（§4.6）・際結氷（§5.8）・氷は壁（§5.6）・特別チップ（§7.2.1）を
+個別にオフにできる**。
 P0 の問い（核そのものが面白いか）を、後から足した仕組み抜きで確かめるため。
 
 ## テスト
@@ -46,6 +47,7 @@ P0 の問い（核そのものが面白いか）を、後から足した仕組�
 godot --headless --path godot --script res://tests/spec_check.gd      # 仕様書 付録B との一致
 godot --headless --path godot --script res://tests/headless_check.gd  # 3分×2シードのスモーク + 決定性
 godot --headless --path godot --script res://tests/audio_check.gd     # 音源が拍に乗るかの実測
+godot --headless --path godot --script res://tests/special_check.gd   # 特別チップの供給と発動 (7.2.1)
 ```
 
 `spec_check` は付録B「数値の検算シート」の5ケースを実際に盤面で再現し、

@@ -60,10 +60,16 @@ const ICE_FRAMES := [
 ]
 var ice_tex: Array = []
 
+## 背景の写真。元画像は tools/make_bg.py で 9:16 に切り出して落としてある
+const BG_PATH := "res://asetts/bg/underwater.png"
+var bg_tex: Texture2D = null
+
 func _ready() -> void:
 	# Web書き出しにはOSのフォントが無く、組み込みのフォールバックは日本語の
 	# グリフを持たないため、埋め込みフォントを使う（無いと全部 豆腐 になる）。
 	# 実際に描画する文字だけをサブセット化してあるので 50KB 程度。
+	if ResourceLoader.exists(BG_PATH):
+		bg_tex = load(BG_PATH)
 	for path in ICE_FRAMES:
 		if ResourceLoader.exists(path):
 			ice_tex.append(load(path))
@@ -323,29 +329,61 @@ func _draw() -> void:
 		_draw_gameover()
 
 ## 水中: 上ほど明るく、海底ほど暗い。危険域では全体が暗くなる（3.1 / 4.5）
+##
+## 背景写真を敷いたうえで、奥行きの階調と危険域の赤染めを必ず上から重ねる。
+## この2つは装飾ではなく「水面までの距離」と「あと何段で埋没か」を伝える
+## ゲーム内の信号なので、写真に任せず実行時に描く。
 func _draw_water() -> void:
 	var danger: float = clampf(float(sim.ground_height() - (Cfg.ROWS - 2)) / 3.0, 0.0, 1.0)
+	var screen := Rect2(0, 0, VW, VH)
+	if bg_tex != null:
+		draw_texture_rect(bg_tex, screen, false)
 	var bands := 64
 	var bh := VH / float(bands)
 	for i in range(bands):
-		var t := float(i) / float(bands - 1)
-		var top := Color(0.10, 0.32, 0.47)
-		var bot := Color(0.015, 0.04, 0.10)
-		var c := bot.lerp(top, t * t * 0.6 + t * 0.4)
-		c = c.lerp(Color(0.10, 0.02, 0.04), danger * 0.45)
-		draw_rect(Rect2(0, VH - (float(i) + 1.0) * bh, VW, bh + 1.5), c)
-	# 差し込む光条
-	var surf := origin.y - float(Cfg.ROWS) * cell
-	for i in range(4):
-		var x := 60.0 + float(i) * 130.0
-		var pts := PackedVector2Array([
-			Vector2(x, surf), Vector2(x + 40.0, surf),
-			Vector2(x + 130.0, VH), Vector2(x - 20.0, VH)])
-		draw_colored_polygon(pts, Color(0.55, 0.85, 1.0, 0.045 * (1.0 - danger)))
+		var t := float(i) / float(bands - 1)        # 0 = 海底, 1 = 水面
+		var depth := t * t * 0.6 + t * 0.4
+		var box := Rect2(0, VH - (float(i) + 1.0) * bh, VW, bh + 1.5)
+		if bg_tex == null:
+			var c := Color(0.015, 0.04, 0.10).lerp(Color(0.10, 0.32, 0.47), depth)
+			draw_rect(box, c.lerp(Color(0.10, 0.02, 0.04), danger * 0.45))
+		else:
+			# 写真に重ねる幕。海底ほど濃くして、積み上がったブロックを浮かせる
+			draw_rect(box, Color(0.02, 0.05, 0.12, lerpf(0.74, 0.08, depth)))
+	if bg_tex != null and danger > 0.01:
+		draw_rect(screen, Color(0.30, 0.03, 0.06, danger * 0.42))
+	if bg_tex != null:
+		# 上下の帯。写真で一番明るいのが水面付近＝HUDの位置なので、ここを
+		# 落とさないとスコアもフレームレートも読めない。下はボタンの座布団。
+		_draw_scrim(0.0, HUD_H + 22.0, 0.66, 0.0)
+		_draw_scrim(VH - THUMB_H, VH, 0.30, 0.82)
+	if bg_tex == null:
+		# 差し込む光条（写真がある場合は写真側が持っている）
+		var surf := origin.y - float(Cfg.ROWS) * cell
+		for i in range(4):
+			var x := 60.0 + float(i) * 130.0
+			var pts := PackedVector2Array([
+				Vector2(x, surf), Vector2(x + 40.0, surf),
+				Vector2(x + 130.0, VH), Vector2(x - 20.0, VH)])
+			draw_colored_polygon(pts, Color(0.55, 0.85, 1.0, 0.045 * (1.0 - danger)))
+
+## y0 から y1 へ alpha を a0 -> a1 で渡す暗幕。写真の明暗に関係なく
+## 文字が読める下地をつくる。
+func _draw_scrim(y0: float, y1: float, a0: float, a1: float) -> void:
+	var steps := 24
+	var sh := (y1 - y0) / float(steps)
+	for i in range(steps):
+		var t := (float(i) + 0.5) / float(steps)
+		draw_rect(Rect2(0, y0 + float(i) * sh, VW, sh + 1.0),
+			Color(0.01, 0.03, 0.07, lerpf(a0, a1, t)))
 
 func _draw_board_frame() -> void:
 	var bw := cell * float(Cfg.COLS)
 	var surf := origin.y - float(Cfg.ROWS) * cell
+	# 盤面の下敷き。背景の宝石はブロックと大きさも色域も近いので、盤の中だけ
+	# 沈めておかないとどれが操作できる駒なのか判別できない（11.2）
+	if bg_tex != null:
+		draw_rect(Rect2(origin.x, surf, bw, origin.y - surf), Color(0.01, 0.03, 0.07, 0.42))
 	# 水面
 	draw_line(Vector2(origin.x - 14, surf), Vector2(origin.x + bw + 14, surf), Color(0.75, 0.95, 1.0, 0.85), 3.0)
 	draw_string(font, Vector2(origin.x + bw + 18, surf + 6), "水面", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.7, 0.9, 1.0, 0.8))

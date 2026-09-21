@@ -8,33 +8,40 @@
 class_name GameAudio
 extends Node
 
-## 音源の配置。ファイル名が違う場合はここだけ直せばよい。
-const BGM_PATH := "res://audio/bgm/main.ogg"
-const SE_PATHS := {
-	"grab":    "res://audio/se/grab.wav",     # ブロックを掴む
-	"freeze":  "res://audio/se/freeze.wav",   # 結氷（連鎖数で音階が上がる）
-	"kiwa":    "res://audio/se/kiwa.wav",     # 際結氷（§5.8）
-	"melt":    "res://audio/se/melt.wav",     # 融解。これがパーカッションの実体（§4.6）
-	"surface": "res://audio/se/surface.wav",  # 水面到達
-	"land":    "res://audio/se/land.wav",     # 沈降して着地
-	"tick":    "res://audio/se/tick.wav",     # 際窓のグリッド頭（§6.4.1）
+const BGM_PATH := "res://asetts/sound/bgm/Breathing Spaces.mp3"
+
+## イベント -> { path, pitch, db }
+## 手持ちの音が足りないイベントは、既存の音のピッチ/音量を振って代用している。
+## 専用の音が用意できたら path を差し替えるだけでよい。
+const SE := {
+	"grab":    {"path": "res://asetts/sound/se/click.wav",    "pitch": 1.00, "db":  -9.0},
+	"freeze":  {"path": "res://asetts/sound/se/Freezing.wav", "pitch": 1.00, "db":   0.0},
+	# 際結氷（§5.8）は専用音が無いので Freezing を1オクターブ上げて代用
+	"kiwa":    {"path": "res://asetts/sound/se/Freezing.wav", "pitch": 2.00, "db":   2.0},
+	# 融解。これが拍グリッド上で鳴り、ゲームのパーカッションになる（§4.6）
+	"melt":    {"path": "res://asetts/sound/se/Melting.wav",  "pitch": 1.00, "db":  -1.0},
+	"surface": {"path": "res://asetts/sound/se/floatup.wav",  "pitch": 1.00, "db":   2.0},
+	# 沈降して着地。専用音が無いので Melting を低く鈍く
+	"land":    {"path": "res://asetts/sound/se/Melting.wav",  "pitch": 0.62, "db":  -4.0},
+	# 際窓のグリッド頭で鳴る小さなチック（§6.4.1）
+	"tick":    {"path": "res://asetts/sound/se/click.wav",    "pitch": 2.20, "db": -16.0},
 }
 
 ## 連鎖数 → 半音。メジャースケールで上がっていく（§11.1）
 const CHAIN_SEMITONES := [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24]
 
 const SE_VOICES := 12
-const DRIFT_TOLERANCE := 0.08   # これ以上ズレたら BGM をシークして sim に合わせる
+const DRIFT_TOLERANCE := 0.08        # これ以上ズレたら BGM をシークして sim に合わせる
 const DRIFT_CHECK_INTERVAL := 1.0
 
 var bgm: AudioStreamPlayer
 var _voices: Array = []
 var _next_voice := 0
-var _streams := {}
+var _streams := {}                   # path -> AudioStream（同じファイルは1回だけ読む）
 var _last_drift_check := -99.0
 var _missing: Array = []
 
-var bgm_volume_db := -8.0
+var bgm_volume_db := -9.0
 var se_volume_db := -4.0
 var enabled := true
 
@@ -44,7 +51,6 @@ func _ready() -> void:
 	add_child(bgm)
 	for i in range(SE_VOICES):
 		var p := AudioStreamPlayer.new()
-		p.volume_db = se_volume_db
 		add_child(p)
 		_voices.append(p)
 	_load_all()
@@ -52,18 +58,23 @@ func _ready() -> void:
 func _load_all() -> void:
 	if ResourceLoader.exists(BGM_PATH):
 		bgm.stream = load(BGM_PATH)
+		# .import の設定に依存せず、コード側でループを保証する
+		if "loop" in bgm.stream:
+			bgm.stream.loop = true
 	else:
 		_missing.append(BGM_PATH)
-	for key in SE_PATHS.keys():
-		var path: String = SE_PATHS[key]
+	for key in SE.keys():
+		var path: String = SE[key]["path"]
+		if _streams.has(path):
+			continue
 		if ResourceLoader.exists(path):
-			_streams[key] = load(path)
-		else:
+			_streams[path] = load(path)
+		elif not _missing.has(path):
 			_missing.append(path)
 	if _missing.is_empty():
-		print("[audio] 全て読み込み済み")
+		print("[audio] 読み込み完了")
 	else:
-		print("[audio] 未配置のため無音: %s" % ", ".join(_missing))
+		print("[audio] 未配置のため該当イベントは無音: %s" % ", ".join(_missing))
 
 func has_any() -> bool:
 	return bgm.stream != null or not _streams.is_empty()
@@ -77,7 +88,10 @@ func stop_bgm() -> void:
 
 ## sim 時刻に BGM を追従させる。ズレが閾値を超えたときだけシークする。
 func sync_bgm(sim_seconds: float) -> void:
-	if not enabled or bgm.stream == null or not bgm.playing:
+	if not enabled or bgm.stream == null:
+		return
+	if not bgm.playing:
+		bgm.play()   # mp3 のループ設定が効いていない場合の保険
 		return
 	if sim_seconds - _last_drift_check < DRIFT_CHECK_INTERVAL:
 		return
@@ -88,7 +102,6 @@ func sync_bgm(sim_seconds: float) -> void:
 	var want: float = fposmod(sim_seconds, length)
 	var have: float = bgm.get_playback_position()
 	var diff: float = want - have
-	# 曲の端をまたいだ場合を補正
 	if diff > length * 0.5:
 		diff -= length
 	elif diff < -length * 0.5:
@@ -96,14 +109,18 @@ func sync_bgm(sim_seconds: float) -> void:
 	if absf(diff) > DRIFT_TOLERANCE:
 		bgm.seek(want)
 
-func play(key: String, pitch: float = 1.0, volume_offset_db: float = 0.0) -> void:
-	if not enabled or not _streams.has(key):
+func play(key: String, pitch_mult: float = 1.0, db_offset: float = 0.0) -> void:
+	if not enabled or not SE.has(key):
+		return
+	var cfg: Dictionary = SE[key]
+	var stream = _streams.get(cfg["path"])
+	if stream == null:
 		return
 	var p: AudioStreamPlayer = _voices[_next_voice]
 	_next_voice = (_next_voice + 1) % _voices.size()
-	p.stream = _streams[key]
-	p.pitch_scale = clampf(pitch, 0.25, 4.0)
-	p.volume_db = se_volume_db + volume_offset_db
+	p.stream = stream
+	p.pitch_scale = clampf(float(cfg["pitch"]) * pitch_mult, 0.25, 4.0)
+	p.volume_db = se_volume_db + float(cfg["db"]) + db_offset
 	p.play()
 
 ## 連鎖数に応じて音階を上げる（§11.1）
@@ -118,14 +135,14 @@ func consume(sim: Sim, prev_ice_tick: int) -> int:
 		return prev_ice_tick
 	for e: Dictionary in sim.ev_freeze:
 		if e["kiwa"]:
-			play("kiwa", 1.0, 2.0)
+			play("kiwa")
 		play_freeze(int(e["chain"]))
 	# 融解は拍グリッド上でしか起きないので、そのまま打楽器になる（§4.6）。
 	# 同一ティックに複数融けても 1 回にまとめ、数で音量を上げる。
 	if not sim.ev_melt.is_empty():
 		play("melt", 1.0, minf(float(sim.ev_melt.size() - 1) * 1.5, 4.0))
 	for e: Dictionary in sim.ev_surface:
-		play("surface", 1.0, 2.0)
+		play("surface")
 	if not sim.ev_land.is_empty():
 		play("land")
 	# 際窓に入っている氷があるとき、グリッドの頭で小さくチックを鳴らす
@@ -135,7 +152,7 @@ func consume(sim: Sim, prev_ice_tick: int) -> int:
 		for s: AirStack in sim.stacks:
 			var soon := s.soonest_melt(sim.frame)
 			if soon > 0 and soon <= gf:
-				play("tick", 1.0, -8.0)
+				play("tick")
 				break
 		return tick_id
 	return prev_ice_tick

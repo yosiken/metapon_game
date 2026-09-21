@@ -19,6 +19,13 @@ config/description="仕様書 docs/game-design.md の P0 コア検証用モッ�
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 
+[audio]
+
+; モバイルWebはシングルスレッドで音声もメインスレッドで混ぜるため、
+; 処理が詰まるとバッファが枯渇して音が途切れる。Webだけ余裕を持たせる。
+driver/output_latency=15
+driver/output_latency.web=40
+
 [display]
 
 window/size/viewport_width=540
@@ -33,7 +40,7 @@ pointing/emulate_mouse_from_touch=false
 [physics]
 
 ; sim のティックレートは BPM に一致させる（仕様書 §4.6.3）。BGM が BPM128 なので 128Hz。
-common/physics_ticks_per_second=130
+common/physics_ticks_per_second=78
 
 [rendering]
 

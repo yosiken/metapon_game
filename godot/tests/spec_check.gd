@@ -37,11 +37,15 @@ func _check_chain_mult() -> void:
 
 func _check_grid_frames() -> void:
 	print("拍グリッド (4.6.3) BPM=%d" % Cfg.BPM)
-	_expect("1拍 ticks", float(Cfg.grid_frames(1)), 60.0, 0.001)
-	_expect("8分 ticks", float(Cfg.grid_frames(2)), 30.0, 0.001)
-	_expect("16分 ticks", float(Cfg.grid_frames(4)), 15.0, 0.001)
-	# tick rate == BPM であること（4.6.3 の一般則）
-	_expect("TICKS == BPM", float(Cfg.TICKS), float(Cfg.BPM), 0.001)
+	_expect("1拍 ticks", float(Cfg.grid_frames(1)), 36.0, 0.001)
+	_expect("8分 ticks", float(Cfg.grid_frames(2)), 18.0, 0.001)
+	_expect("16分 ticks", float(Cfg.grid_frames(4)), 9.0, 0.001)
+	# 16分音符が整数ティックに乗ること = TICKS * 15 / BPM が整数（4.6.3）
+	var q := float(Cfg.TICKS) * 15.0 / float(Cfg.BPM)
+	_expect("TICKS*15/BPM が整数", q - floorf(q), 0.0, 0.0001)
+	# グリッドが秒で見て正しい長さになっていること
+	_expect("16分 [ms]", float(Cfg.grid_frames(4)) / float(Cfg.TICKS) * 1000.0,
+		60.0 / float(Cfg.BPM) / 4.0 * 1000.0, 0.01)
 
 func _case(name: String, layout: Array, g: float, wt: float, ft: float, a: float, v0: float) -> void:
 	print("\n%s" % name)

@@ -36,8 +36,29 @@ var font: Font
 var audio: GameAudio
 var _ice_tick := -1
 
+# 画面上のボタン（スマホにはキーボードが無いので必須）
+var btn_pause := Rect2()
+var btn_retry := Rect2()
+var btn_debug := Rect2()
+var btn_gameover := Rect2()
+
+# 性能の実測値（実機で処理落ちしていないかを見るため）
+var fps_shown := 0
+var sim_hz_shown := 0
+var _sim_steps := 0
+var _hz_timer := 0.0
+
+const FONT_PATH := "res://asetts/font/NotoSansJP-subset.woff2"
+
 func _ready() -> void:
-	font = ThemeDB.fallback_font
+	# Web書き出しにはOSのフォントが無く、組み込みのフォールバックは日本語の
+	# グリフを持たないため、埋め込みフォントを使う（無いと全部 豆腐 になる）。
+	# 実際に描画する文字だけをサブセット化してあるので 50KB 程度。
+	if ResourceLoader.exists(FONT_PATH):
+		font = load(FONT_PATH)
+	else:
+		push_warning("日本語フォントが見つからない: " + FONT_PATH)
+		font = ThemeDB.fallback_font
 	_recalc_geometry()
 	sim = Sim.new(seed_value)
 	audio = GameAudio.new()
@@ -50,6 +71,13 @@ func _recalc_geometry() -> void:
 	cell = minf(VW * 0.94 / float(Cfg.COLS), (VH * 0.78) / float(Cfg.ROWS))
 	var bw := cell * float(Cfg.COLS)
 	origin = Vector2((VW - bw) * 0.5, VH - THUMB_H)
+	# 親指セーフゾーンにボタンを並べる。タップ領域は 44pt 以上を確保する。
+	var by := VH - THUMB_H + 24.0
+	var bh := 56.0
+	btn_pause = Rect2(24.0, by, 130.0, bh)
+	btn_debug = Rect2(VW - 154.0, by, 130.0, bh)
+	btn_retry = Rect2(VW * 0.5 - 65.0, by, 130.0, bh)
+	btn_gameover = Rect2(VW * 0.5 - 110.0, VH * 0.56, 220.0, 72.0)
 
 # ---------------------------------------------------------------- ループ
 
@@ -69,6 +97,7 @@ func _physics_process(_delta: float) -> void:
 	for i in range(steps):
 		sim.step()
 		_consume_events()
+	_sim_steps += steps
 	audio.sync_bgm(sim.elapsed())
 
 func _consume_events() -> void:
@@ -133,6 +162,12 @@ func _process(delta: float) -> void:
 	for g: Dictionary in escapes:
 		g["t"] += delta
 	escapes = escapes.filter(func(g): return g["t"] < g["dur"])
+	_hz_timer += delta
+	if _hz_timer >= 1.0:
+		sim_hz_shown = int(round(float(_sim_steps) / _hz_timer))
+		fps_shown = int(Engine.get_frames_per_second())
+		_sim_steps = 0
+		_hz_timer = 0.0
 	_update_readout()
 	queue_redraw()
 
@@ -161,6 +196,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventScreenTouch:
 		if event.pressed:
+			if _handle_ui_tap(event.position):
+				return
 			_grab(event.index, event.position)
 		else:
 			pointers.erase(event.index)
@@ -168,11 +205,32 @@ func _unhandled_input(event: InputEvent) -> void:
 		_drag(event.index, event.position)
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
+			if _handle_ui_tap(event.position):
+				return
 			_grab(100, event.position)
 		else:
 			pointers.erase(100)
 	elif event is InputEventMouseMotion and pointers.has(100):
 		_drag(100, event.position)
+
+## 画面上のボタンのタップを処理する。処理したら true。
+## スマホにはキーボードが無いため、リトライ・一時停止・デバッグ表示は
+## すべて画面から触れる必要がある。
+func _handle_ui_tap(pos: Vector2) -> bool:
+	if sim.game_over:
+		# 埋没中はどこを触ってもリトライ（最速でやり直せるように。11.3）
+		_reset()
+		return true
+	if btn_pause.has_point(pos):
+		paused = not paused
+		return true
+	if btn_retry.has_point(pos):
+		_reset()
+		return true
+	if btn_debug.has_point(pos):
+		_toggle_debug()
+		return true
+	return false
 
 func _grab(id: int, pos: Vector2) -> void:
 	if pointers.size() >= 2 and not pointers.has(id):
@@ -241,9 +299,7 @@ func _draw() -> void:
 	if flash > 0.01:
 		draw_rect(Rect2(0, 0, VW, VH), Color(1, 1, 1, flash * 0.35))
 	if sim.game_over:
-		draw_rect(Rect2(0, 0, VW, VH), Color(0.02, 0.04, 0.09, 0.72))
-		draw_string(font, Vector2(0, VH * 0.46), "埋没", HORIZONTAL_ALIGNMENT_CENTER, VW, 56, Color(0.8, 0.86, 0.95))
-		draw_string(font, Vector2(0, VH * 0.52), "R でリトライ", HORIZONTAL_ALIGNMENT_CENTER, VW, 22, Color(0.6, 0.68, 0.8))
+		_draw_gameover()
 
 ## 水中: 上ほど明るく、海底ほど暗い。危険域では全体が暗くなる（3.1 / 4.5）
 func _draw_water() -> void:
@@ -462,6 +518,34 @@ func _predict_apex(s: AirStack) -> float:
 
 # ---------------------------------------------------------------- HUD
 
+## 埋没（ゲームオーバー）。リトライまで最短で戻れるようにする（11.3）。
+func _draw_gameover() -> void:
+	draw_rect(Rect2(0, 0, VW, VH), Color(0.02, 0.04, 0.09, 0.72))
+	draw_string(font, Vector2(0, VH * 0.40), "埋没", HORIZONTAL_ALIGNMENT_CENTER, VW, 56,
+		Color(0.8, 0.86, 0.95))
+	draw_string(font, Vector2(0, VH * 0.46), "SCORE %d   最大連鎖 %d" % [int(sim.score), sim.stat_max_chain],
+		HORIZONTAL_ALIGNMENT_CENTER, VW, 20, Color(0.62, 0.72, 0.85))
+	var pulse: float = 0.72 + 0.28 * sin(float(Time.get_ticks_msec()) * 0.004)
+	draw_rect(btn_gameover, Color(0.16, 0.55, 0.72, pulse))
+	draw_rect(btn_gameover, Color(0.75, 0.95, 1.0, 0.9), false, 2.0)
+	draw_string(font, Vector2(btn_gameover.position.x, btn_gameover.position.y + 46.0),
+		"もう一度", HORIZONTAL_ALIGNMENT_CENTER, btn_gameover.size.x, 28, Color(1, 1, 1))
+	draw_string(font, Vector2(0, VH * 0.70), "画面のどこでもタップでリトライ",
+		HORIZONTAL_ALIGNMENT_CENTER, VW, 16, Color(0.55, 0.65, 0.78))
+
+## 画面上のボタン。スマホにはキーボードが無いので常時表示する。
+func _draw_buttons() -> void:
+	_draw_button(btn_pause, "再開" if paused else "一時停止", paused)
+	_draw_button(btn_retry, "リトライ", false)
+	_draw_button(btn_debug, "情報", dbg_panel != null and dbg_panel.visible)
+
+func _draw_button(r: Rect2, label: String, active: bool) -> void:
+	var bg := Color(0.16, 0.45, 0.60, 0.55) if active else Color(0.10, 0.20, 0.30, 0.55)
+	draw_rect(r, bg)
+	draw_rect(r, Color(0.6, 0.85, 1.0, 0.45), false, 1.5)
+	draw_string(font, Vector2(r.position.x, r.position.y + 36.0), label,
+		HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 18, Color(0.85, 0.94, 1.0))
+
 func _draw_hud() -> void:
 	var pale := Color(0.78, 0.88, 0.96)
 	draw_string(font, Vector2(18, 34), "SCORE %d" % int(sim.score), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, pale)
@@ -492,11 +576,17 @@ func _draw_hud() -> void:
 		draw_string(font, Vector2(0, VH * 0.42), "%d CHAIN" % sim.chain,
 			HORIZONTAL_ALIGNMENT_CENTER, VW, sz, Color(0.7, 1.0, 1.0, 0.45 + chain_pop * 0.55))
 
-	if paused:
-		draw_string(font, Vector2(0, VH - 26), "PAUSED  [space]再開 [.]コマ送り [s]スロー [r]リセット [d]デバッグ",
-			HORIZONTAL_ALIGNMENT_CENTER, VW, 14, Color(1, 1, 0.6, 0.9))
-	elif slow:
-		draw_string(font, Vector2(0, VH - 26), "SLOW 0.25x", HORIZONTAL_ALIGNMENT_CENTER, VW, 14, Color(1, 1, 0.6, 0.9))
+	_draw_buttons()
+
+	# 実測の性能。処理落ちしていると sim が目標ティックレートに届かない。
+	var hz_ok: bool = sim_hz_shown >= Cfg.TICKS - 3
+	draw_string(font, Vector2(VW - 150.0, VH - 8.0),
+		"%d fps / sim %d Hz" % [fps_shown, sim_hz_shown],
+		HORIZONTAL_ALIGNMENT_RIGHT, 142.0, 13,
+		Color(0.5, 0.62, 0.72, 0.8) if hz_ok else Color(1.0, 0.55, 0.45, 0.95))
+	if slow:
+		draw_string(font, Vector2(8.0, VH - 8.0), "SLOW 0.25x", HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
+			Color(1, 1, 0.6, 0.9))
 
 # ---------------------------------------------------------------- デバッグUI
 
@@ -519,6 +609,12 @@ func _reset() -> void:
 func _build_debug_ui() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
+	# Control 側にも同じフォントを効かせる（Webでは日本語が豆腐になるため）
+	if font != null:
+		var theme := Theme.new()
+		theme.default_font = font
+		theme.default_font_size = 12
+		layer.theme = theme
 	dbg_panel = PanelContainer.new()
 	dbg_panel.position = Vector2(8, 96)
 	dbg_panel.custom_minimum_size = Vector2(250, 0)

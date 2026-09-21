@@ -22,6 +22,7 @@ var color_bag: Array = []
 
 var _next_id: int = 1
 var _next_group: int = 1
+var _ground_dict: Dictionary = {}   # _ground_as_dict() のキャッシュ
 
 # --- デバッグ用トグル（P0 のコア検証を邪魔しないよう個別に切れる） ---
 var speed_mult: float = 1.0      # 速度プリセット (8.3.3)
@@ -49,8 +50,10 @@ func reset(seed_value: int) -> void:
 	rng = XorRng.new(seed_value)
 	frame = 0
 	ground = []
+	_ground_dict = {}
 	for c in range(Cfg.COLS):
 		ground.append([])
+		_ground_dict[c] = ground[c]
 	falling = []
 	stacks = []
 	chain = 0
@@ -339,11 +342,11 @@ func _bodies() -> Array:
 		out.append({"kind": "stack", "cols": s.cols, "stack": s})
 	return out
 
+## ground を列->配列の辞書として見せる。内側の Array オブジェクトは
+## sim の寿命を通じて同一（append/remove_at で中身だけが変わる）ので、
+## 辞書は一度作れば使い回せる。毎tick作り直すと無視できない負荷になる。
 func _ground_as_dict() -> Dictionary:
-	var d := {}
-	for c in range(Cfg.COLS):
-		d[c] = ground[c]
-	return d
+	return _ground_dict
 
 func _detect_matches() -> void:
 	for body in _bodies():
@@ -361,19 +364,69 @@ func _detect_matches() -> void:
 					b.state = MBlock.State.FREEZING
 				b.freeze_at = at
 
-## 同色3連続以上に属するセルを連結成分としてまとめて返す
+## 同色3連続以上に属するセルを連結成分としてまとめて返す。
+##
+## セルごとに縦横へ走り直す実装だと 1tick あたり数千回の関数呼び出しになり、
+## Web/モバイルでメインスレッドを飽和させて音が途切れた。縦横それぞれ
+## 1回の線形走査（極大ランの検出）に置き換えてある。結果は同一。
 func _find_components(cols_dict: Dictionary) -> Array:
+	var hit := {}
+	var max_rows := 0
+	for c in cols_dict.keys():
+		max_rows = maxi(max_rows, (cols_dict[c] as Array).size())
+
+	# 縦方向: 列ごとに同色の極大ランを拾う
+	for c in cols_dict.keys():
+		var arr: Array = cols_dict[c]
+		var start := 0
+		while start < arr.size():
+			var b: MBlock = arr[start]
+			if not b.can_freeze() or b.state == MBlock.State.ICE:
+				start += 1
+				continue
+			var end := start + 1
+			while end < arr.size():
+				var o: MBlock = arr[end]
+				if o.color != b.color or not o.can_freeze() or o.state == MBlock.State.ICE:
+					break
+				end += 1
+			if end - start >= Cfg.MATCH_MIN:
+				for r in range(start, end):
+					hit[Vector2i(c, r)] = true
+			start = end
+
+	# 横方向: 行ごとに同色の極大ランを拾う。
+	# スタックは一部の列しか持たないため、欠けている列でランが切れる。
+	for r in range(max_rows):
+		var c0 := 0
+		while c0 < Cfg.COLS:
+			var b := _at(cols_dict, c0, r)
+			if b == null or not b.can_freeze() or b.state == MBlock.State.ICE:
+				c0 += 1
+				continue
+			var c1 := c0 + 1
+			while c1 < Cfg.COLS:
+				var o := _at(cols_dict, c1, r)
+				if o == null or o.color != b.color or not o.can_freeze() or o.state == MBlock.State.ICE:
+					break
+				c1 += 1
+			if c1 - c0 >= Cfg.MATCH_MIN:
+				for c in range(c0, c1):
+					hit[Vector2i(c, r)] = true
+			c0 = c1
+
+	if hit.is_empty():
+		return []
+
+	# marked の構築順は従来と揃える。成分の列挙順が変わると、同一tickに
+	# 複数が結氷したときの連鎖の採番が変わってしまうため。
 	var marked := {}   # Vector2i -> color
 	for c in cols_dict.keys():
 		var arr: Array = cols_dict[c]
 		for r in range(arr.size()):
-			var b: MBlock = arr[r]
-			if not b.can_freeze() or b.state == MBlock.State.ICE:
-				continue
-			if _run_len(cols_dict, c, r, 0, 1) >= Cfg.MATCH_MIN or _run_len(cols_dict, c, r, 1, 0) >= Cfg.MATCH_MIN:
-				marked[Vector2i(c, r)] = b.color
-	if marked.is_empty():
-		return []
+			var key := Vector2i(c, r)
+			if hit.has(key):
+				marked[key] = (arr[r] as MBlock).color
 	var seen := {}
 	var comps := []
 	for key in marked.keys():
@@ -397,20 +450,6 @@ func _find_components(cols_dict: Dictionary) -> Array:
 		comps.append(comp)
 	return comps
 
-func _run_len(cols_dict: Dictionary, c: int, r: int, dc: int, dr: int) -> int:
-	var b := _at(cols_dict, c, r)
-	if b == null:
-		return 0
-	var n := 1
-	for sgn in [1, -1]:
-		var i := 1
-		while true:
-			var o := _at(cols_dict, c + dc * i * sgn, r + dr * i * sgn)
-			if o == null or o.color != b.color or not o.can_freeze() or o.state == MBlock.State.ICE:
-				break
-			n += 1
-			i += 1
-	return n
 
 func _at(cols_dict: Dictionary, c: int, r: int) -> MBlock:
 	if not cols_dict.has(c):

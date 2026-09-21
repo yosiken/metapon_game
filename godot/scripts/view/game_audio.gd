@@ -37,8 +37,16 @@ const SE := {
 const CHAIN_SEMITONES := [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24]
 
 const SE_VOICES := 12
-const DRIFT_TOLERANCE := 0.08        # これ以上ズレたら BGM をシークして sim に合わせる
-const DRIFT_CHECK_INTERVAL := 1.0
+## BGM の追従方針（重要）
+##
+## 当初は「毎秒ズレを測り 80ms を超えたらシークして sim に合わせる」実装だった。
+## しかしモバイルWebで処理落ちすると sim 時刻が実時間より遅れるため、
+## 毎秒 BGM が巻き戻されて**同じ1秒が繰り返し再生される**という不具合になった。
+##
+## 現在は「破綻したときだけ直す」方針にしている。通常の再生中は一切触らない。
+## sim が実時間を保てている限り、開始時刻を合わせておけば拍はズレない。
+const DRIFT_TOLERANCE := 2.0         # タブが裏に回った等、明らかに破綻した場合のみ直す
+const DRIFT_CHECK_INTERVAL := 2.0
 
 ## BGM の先頭無音ぶんのオフセット [s]。耳で合わせて詰める。
 const BGM_LEAD := 0.0
@@ -54,6 +62,7 @@ var _next_voice := 0
 var _voice_tweens: Array = []
 var _streams := {}                   # path -> AudioStream（同じファイルは1回だけ読む）
 var _last_drift_check := -99.0
+var _want_playing := false
 var _missing: Array = []
 
 var bgm_volume_db := -9.0
@@ -96,26 +105,36 @@ func has_any() -> bool:
 	return bgm.stream != null or not _streams.is_empty()
 
 func start_bgm() -> void:
+	_want_playing = true
+	_last_drift_check = -99.0
 	if bgm.stream != null and not bgm.playing:
 		bgm.play()
 
 func stop_bgm() -> void:
+	_want_playing = false
 	bgm.stop()
 
-## sim 時刻に BGM を追従させる。ズレが閾値を超えたときだけシークする。
+## BGM の状態を見守る。通常は何もしない（上の方針を参照）。
 func sync_bgm(sim_seconds: float) -> void:
-	if not enabled or bgm.stream == null:
-		return
-	if not bgm.playing:
-		bgm.play()   # mp3 のループ設定が効いていない場合の保険
+	if not enabled or bgm.stream == null or not _want_playing:
 		return
 	if sim_seconds - _last_drift_check < DRIFT_CHECK_INTERVAL:
 		return
 	_last_drift_check = sim_seconds
+
 	var length := BGM_LOOP_SEC if BGM_LOOP_SEC > 0.0 else bgm.stream.get_length()
 	if length <= 0.0:
 		return
 	var want: float = fposmod(sim_seconds + BGM_LEAD, length)
+
+	# 止まってしまった場合のみ、正しい位置から再開する。
+	# 引数なしの play() は頭出しになってしまうので使わない。
+	if not bgm.playing:
+		bgm.play(want)
+		return
+
+	# ここから先は「明らかに破綻した」場合の復帰のみ。
+	# 通常の処理落ち程度ではシークしない（毎秒巻き戻す不具合の原因だった）。
 	var have: float = bgm.get_playback_position()
 	var diff: float = want - have
 	if diff > length * 0.5:

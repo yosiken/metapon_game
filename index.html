@@ -2,7 +2,7 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 		<title>METAPON Mock</title>
 		<style>
 html, body, #canvas {
@@ -11,15 +11,31 @@ html, body, #canvas {
 	border: 0;
 }
 
+/* --- スマホ対応（METAPON カスタム） ---------------------------------
+   Godot 既定のシェルは window.innerHeight でキャンバスを作るため、
+   スマホのブラウザ下部ツールバーの下にキャンバスの底が潜り込み、
+   画面下部のUI（ボタン・fps表示）が見えなくなる。
+   100dvh（ブラウザUIを除いた動的ビューポート高）で固定して回避する。   */
+html, body {
+	width: 100%;
+	height: 100%;
+	height: 100dvh;          /* dvh 非対応ブラウザは上の 100% にフォールバック */
+	overscroll-behavior: none;
+}
+
 body {
 	color: white;
 	background-color: black;
 	overflow: hidden;
 	touch-action: none;
+	position: fixed;         /* スクロール・バウンスを止める */
+	inset: 0;
 }
 
 #canvas {
 	display: block;
+	width: 100%;
+	height: 100%;
 }
 
 #canvas:focus {
@@ -215,6 +231,23 @@ const engine = new Engine(GODOT_CONFIG);
 	}
 }());
 		</script>
-	</body>
+		<script>
+	// dvh に未対応、または動的にツールバーが出入りする環境向けの保険。
+	// visualViewport の実寸をそのまま CSS 変数に流し込んでキャンバスを合わせる。
+	(function () {
+		var vv = window.visualViewport;
+		if (!vv) return;
+		function fit() {
+			document.documentElement.style.height = vv.height + 'px';
+			document.body.style.height = vv.height + 'px';
+		}
+		vv.addEventListener('resize', fit);
+		vv.addEventListener('scroll', fit);
+		window.addEventListener('orientationchange', function () { setTimeout(fit, 300); });
+		fit();
+	})();
+	</script>
+</body>
 </html>
+
 

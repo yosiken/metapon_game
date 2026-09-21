@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://12tidlmyr1cx"
-path="res://.godot/imported/color4_r8c6.png-f2061861b93da5f55ca37ba703bfebb8.ctex"
+uid="uid://bc7gqhdo8xqom"
+path="res://.godot/imported/color4_r5c9.png-866ba0c1fee41a57e541ebfb31ea3b6f.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://asetts/chips/pick5/color4_r8c6.png"
-dest_files=["res://.godot/imported/color4_r8c6.png-f2061861b93da5f55ca37ba703bfebb8.ctex"]
+source_file="res://asetts/chips/pick5/color4_r5c9.png"
+dest_files=["res://.godot/imported/color4_r5c9.png-866ba0c1fee41a57e541ebfb31ea3b6f.ctex"]
 
 [params]
 

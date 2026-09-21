@@ -53,6 +53,17 @@ var _hz_timer := 0.0
 const FONT_PATH := "res://asetts/font/NotoSansJP-subset.woff2"
 
 ## 氷のアニメーション用チップ（6.4.1）。拍グリッドごとに1枚ずつ進める。
+## 色ごとのチップ。並びは Cfg.COLORS（珊瑚/琥珀/緑/紫/白）と対応する。
+## 選定の根拠は tools/pick_chips.py と asetts/chips/README.md
+const CHIP_FILES := [
+	"res://asetts/chips/pick5/color0_r0c2.png",  # 赤・丸
+	"res://asetts/chips/pick5/color1_r0c4.png",  # 金・丸
+	"res://asetts/chips/pick5/color2_r8c1.png",  # 緑・星
+	"res://asetts/chips/pick5/color3_r6c6.png",  # 紫・カイト
+	"res://asetts/chips/pick5/color4_r5c9.png",  # 白・球（オパール）
+]
+var chip_tex: Array = []
+
 const ICE_FRAMES := [
 	"res://asetts/chips/ice/ice0_r1c0.png",
 	"res://asetts/chips/ice/ice1_r2c8.png",
@@ -70,6 +81,12 @@ func _ready() -> void:
 	# 実際に描画する文字だけをサブセット化してあるので 50KB 程度。
 	if ResourceLoader.exists(BG_PATH):
 		bg_tex = load(BG_PATH)
+	for path in CHIP_FILES:
+		if ResourceLoader.exists(path):
+			chip_tex.append(load(path))
+	if chip_tex.size() < CHIP_FILES.size():
+		chip_tex.clear()
+		push_warning("チップが見つからない。単色の矩形で代替する")
 	for path in ICE_FRAMES:
 		if ResourceLoader.exists(path):
 			ice_tex.append(load(path))
@@ -443,7 +460,21 @@ func _draw_block(b: MBlock, col: int, row: float, alpha: float) -> void:
 	elif b.kind == MBlock.Kind.HEAVY:
 		base = base.darkened(0.35)
 	base.a = alpha
-	draw_rect(box, base)
+
+	if chip_tex.is_empty() or b.kind == MBlock.Kind.ROCK:
+		draw_rect(box, base)
+	else:
+		# チップは透過PNGなので、下に同色の座布団を敷いてから重ねる。
+		# 背景の写真が宝石の隙間から透けると、どこまでが1個なのか読めない。
+		draw_rect(box, Color(base.r, base.g, base.b, 0.30 * alpha))
+		# セルいっぱいに広げる。原寸のままだと角が空いて列がつながって見えない
+		var grow := box.size.x * 0.10
+		var dst := Rect2(box.position - Vector2(grow, grow) * 0.5,
+			box.size + Vector2(grow, grow))
+		var tint := Color(1, 1, 1, alpha)
+		if b.kind == MBlock.Kind.HEAVY:
+			tint = Color(0.55, 0.55, 0.62, alpha)
+		draw_texture_rect(chip_tex[b.color % chip_tex.size()], dst, false, tint)
 
 	if b.kind == MBlock.Kind.HEAVY:
 		draw_rect(box, Color(1, 1, 1, 0.5 * alpha), false, 2.0)
@@ -502,18 +533,32 @@ func _draw_ice(b: MBlock, box: Rect2, alpha: float) -> void:
 		draw_line(p0, p1, Color(0.05, 0.22, 0.38, 0.85 * alpha), 4.0)
 		draw_line(p0, p1, Color(0.95, 1.0, 1.0, 0.95 * alpha), 1.8)
 
+## 色覚特性に関わらず色を判別するためのシンボル（11.2）。色は補助であって主ではない。
+##
+## チップの輪郭となるべく揃えてある（緑=星、紫=カイト）。ただし赤と金は
+## どちらも丸いチップなので、そこはシンボルだけが手がかりになる。
+## 宝石の柄の上に黒を置いても沈むだけなので、明るい縁取りの上に濃い芯を重ねる。
 func _draw_symbol(color_idx: int, box: Rect2, alpha: float) -> void:
 	var c := box.get_center()
 	var s := box.size.x * 0.22
-	var ink := Color(0, 0, 0, 0.30 * alpha)
+	_symbol_shape(color_idx, c, s * 1.30, Color(0.98, 1.0, 1.0, 0.50 * alpha))
+	_symbol_shape(color_idx, c, s, Color(0.02, 0.06, 0.12, 0.66 * alpha))
+
+func _symbol_shape(color_idx: int, c: Vector2, s: float, ink: Color) -> void:
 	match color_idx % 5:
-		0: draw_circle(c, s, ink)
-		1: draw_colored_polygon(PackedVector2Array([c + Vector2(0, -s), c + Vector2(s, s), c + Vector2(-s, s)]), ink)
-		2: draw_rect(Rect2(c - Vector2(s, s), Vector2(s * 2, s * 2)), ink)
-		3: draw_colored_polygon(PackedVector2Array([c + Vector2(0, -s), c + Vector2(s, 0), c + Vector2(0, s), c + Vector2(-s, 0)]), ink)
-		4:
-			draw_rect(Rect2(c - Vector2(s, s * 0.32), Vector2(s * 2, s * 0.64)), ink)
-			draw_rect(Rect2(c - Vector2(s * 0.32, s), Vector2(s * 0.64, s * 2)), ink)
+		0: draw_circle(c, s, ink)                                   # 赤
+		1: draw_colored_polygon(PackedVector2Array([                # 金
+			c + Vector2(0, -s), c + Vector2(s * 0.92, s * 0.72), c + Vector2(-s * 0.92, s * 0.72)]), ink)
+		2:                                                          # 緑（チップも星）
+			var star := PackedVector2Array()
+			for i in range(10):
+				var a := -PI * 0.5 + float(i) * PI / 5.0
+				var rr: float = s if i % 2 == 0 else s * 0.44
+				star.append(c + Vector2(cos(a), sin(a)) * rr)
+			draw_colored_polygon(star, ink)
+		3: draw_colored_polygon(PackedVector2Array([                # 紫（チップもカイト）
+			c + Vector2(0, -s), c + Vector2(s * 0.80, 0), c + Vector2(0, s), c + Vector2(-s * 0.80, 0)]), ink)
+		4: draw_rect(Rect2(c - Vector2(s * 0.84, s * 0.84), Vector2(s * 1.68, s * 1.68)), ink)  # 白
 
 ## 水面のリップル: 浮上した「場所」を空間的に示す（成功を体感させる演出 #1）。
 func _draw_ripples() -> void:

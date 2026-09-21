@@ -21,7 +21,7 @@ func _process(_d: float) -> bool:
 		# 危険域まで積み上げる
 		for c in range(Cfg.COLS):
 			while sim.ground[c].size() < Cfg.ROWS - 1:
-				var b := MBlock.new(); b.color = (c + sim.ground[c].size()) % 4
+				var b := MBlock.new(); b.color = (c + sim.ground[c].size()) % 5
 				sim.ground[c].append(b)
 		phase = 2
 		return false

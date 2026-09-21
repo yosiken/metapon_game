@@ -8,7 +8,7 @@
 class_name GameAudio
 extends Node
 
-const BGM_PATH := "res://asetts/sound/bgm/Breathing Spaces.mp3"
+const BGM_PATH := "res://asetts/sound/bgm/Breathing Spaces.ogg"
 
 ## イベント -> { path, pitch, db, lead, max_dur }
 ##   lead    : ファイル先頭の無音をスキップする秒数。
